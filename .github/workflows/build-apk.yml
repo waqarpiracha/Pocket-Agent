@@ -44,7 +44,8 @@ jobs:
 
       - name: Build Android Release APK via Flet
         run: |
-          flet build apk --verbose --include-packages google-genai
+          yes | flutter doctor --android-licenses || true
+          flet build apk --verbose
 
       - name: Locate and Verify APK
         run: |
@@ -56,6 +57,7 @@ jobs:
         with:
           name: PocketAgent-APK
           path: |
+            build/apk/**/*.apk
             build/apk/*.apk
           retention-days: 14
           if-no-files-found: error
