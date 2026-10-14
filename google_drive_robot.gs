@@ -1,24 +1,21 @@
 /**
  * ============================================================================
  * GOOGLE DRIVE ROBOT (google_drive_robot.gs)
- * Zero-Server, 100% Free Backend for Pocket Agent Mobile App
+ * Zero-Server Backend for Waqar-SuperAgent Android App
  * ============================================================================
  * 
  * Capabilities:
- * 1. Second Brain Knowledge Hub (Search and Append to Google Docs/Sheets)
- * 2. Video Publishing Queue (Track videos, accounts, metadata, and status)
- * 3. Direct Native Upload to YouTube via Advanced YouTube Service
- * 4. Bridges to Instagram Reels & TikTok Content Posting APIs
+ * 1. Second Brain Knowledge Hub (Search and Append to Google Docs)
+ * 2. Google Drive Video Browser (Scan & list all .mp4/video files in Drive)
+ * 3. Video Publishing Queue (Google Sheet tracking)
+ * 4. Direct Native Upload to YouTube via Advanced YouTube Service
+ * 5. Bridges for Instagram Reels & TikTok Content Posting APIs
  */
 
-// Configuration Constants (Defaults)
 var SECOND_BRAIN_DOC_NAME = "AI_Second_Brain_Master";
 var VIDEO_QUEUE_SHEET_NAME = "Video_Publishing_Queue";
 var VIDEO_FOLDER_NAME = "PocketAgent_Videos";
 
-/**
- * Handle HTTP GET Requests (e.g. Querying Second Brain or Loading Video Queue)
- */
 function doGet(e) {
   try {
     var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "status";
@@ -26,16 +23,25 @@ function doGet(e) {
     if (action === "status") {
       return jsonResponse({
         status: "online",
-        service: "Google Drive Robot for Pocket Agent",
+        service: "Waqar-SuperAgent Google Drive Robot",
         timestamp: new Date().toISOString()
       });
     }
     
+    // Browse & list videos sitting directly in Google Drive
+    if (action === "list_drive_videos" || action === "list_videos") {
+      var folder = (e.parameter.folder || "").trim();
+      var videos = listVideosInDrive(folder);
+      return jsonResponse({ status: "success", count: videos.length, videos: videos });
+    }
+    
+    // Read video queue sheet
     if (action === "get_video_queue") {
       var queue = getVideoQueue();
       return jsonResponse({ status: "success", count: queue.length, queue: queue });
     }
     
+    // Query Second Brain doc
     if (action === "query" || action === "query_second_brain") {
       var query = (e.parameter.q || "").trim();
       var results = querySecondBrain(query);
@@ -48,15 +54,13 @@ function doGet(e) {
   }
 }
 
-/**
- * Handle HTTP POST Requests (e.g. Uploading Videos, Saving Notes, Updating Queue)
- */
 function doPost(e) {
   try {
     var rawData = e.postData ? e.postData.contents : "{}";
     var payload = JSON.parse(rawData);
     var action = payload.action || "unknown";
     
+    // Save to Second Brain
     if (action === "save" || action === "save_second_brain") {
       var topic = payload.topic || "General";
       var content = payload.content || "";
@@ -64,19 +68,21 @@ function doPost(e) {
       return jsonResponse({ status: "success", message: saved });
     }
     
+    // Update queue metadata
     if (action === "update_video_metadata") {
       var filename = payload.filename;
       var title = payload.title;
       var description = payload.description;
       var hashtags = payload.hashtags;
-      var account = payload.account || "Account 1";
+      var account = payload.account || "Waqar Analytics";
       var updated = updateVideoRow(filename, account, title, description, hashtags);
       return jsonResponse({ status: "success", message: updated });
     }
     
+    // Direct publish video to YouTube and other platforms
     if (action === "publish_video") {
       var filename = payload.filename;
-      var account = payload.account || "Account 1";
+      var account = payload.account || "Waqar Analytics";
       var title = payload.title || "New Video";
       var description = payload.description || "";
       var hashtags = payload.hashtags || "";
@@ -92,21 +98,53 @@ function doPost(e) {
   }
 }
 
-/**
- * Return formatted JSON response with CORS headers
- */
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================================================================
-// 1. SECOND BRAIN KNOWLEDGE HUB FUNCTIONS
+// 1. GOOGLE DRIVE VIDEO BROWSER
 // ============================================================================
 
 /**
- * Appends a new entry to the user's Second Brain Master Google Doc
+ * Lists all video files sitting inside user's Google Drive
  */
+function listVideosInDrive(folderName) {
+  var videoList = [];
+  var files;
+  
+  if (folderName && folderName !== "all" && folderName !== "root") {
+    var folders = DriveApp.getFoldersByName(folderName);
+    if (folders.hasNext()) {
+      files = folders.next().getFiles();
+    } else {
+      files = DriveApp.searchFiles("mimeType contains 'video/' and trashed = false");
+    }
+  } else {
+    files = DriveApp.searchFiles("mimeType contains 'video/' and trashed = false");
+  }
+  
+  while (files && files.hasNext() && videoList.length < 60) {
+    var f = files.next();
+    var name = f.getName();
+    if (name.match(/\.(mp4|mov|avi|mkv|webm)$/i) || (f.getMimeType() && f.getMimeType().indexOf("video/") !== -1)) {
+      videoList.push({
+        id: f.getId(),
+        name: name,
+        sizeMb: (f.getSize() / (1024 * 1024)).toFixed(2),
+        updatedAt: Utilities.formatDate(f.getLastUpdated(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm"),
+        url: f.getUrl()
+      });
+    }
+  }
+  return videoList;
+}
+
+// ============================================================================
+// 2. SECOND BRAIN FUNCTIONS
+// ============================================================================
+
 function appendToSecondBrain(topic, content) {
   var doc = getOrCreateSecondBrainDoc();
   var body = doc.getBody();
@@ -117,18 +155,13 @@ function appendToSecondBrain(topic, content) {
   heading.setHeading(DocumentApp.ParagraphHeading.HEADING3);
   body.appendParagraph(content);
   doc.saveAndClose();
-  
   return "Logged to Second Brain (" + SECOND_BRAIN_DOC_NAME + ") at " + timestamp;
 }
 
-/**
- * Searches the Second Brain doc for relevant paragraphs
- */
 function querySecondBrain(keyword) {
   if (!keyword) return "Please supply a search keyword.";
   var doc = getOrCreateSecondBrainDoc();
   var text = doc.getBody().getText();
-  
   var paragraphs = text.split("\n");
   var matches = [];
   var lowerK = keyword.toLowerCase();
@@ -137,21 +170,15 @@ function querySecondBrain(keyword) {
     var p = paragraphs[i].trim();
     if (p.length > 0 && p.toLowerCase().indexOf(lowerK) !== -1) {
       matches.push(p);
-      if (matches.length >= 8) break; // Limit top 8 context snippets
+      if (matches.length >= 8) break;
     }
   }
-  
-  if (matches.length === 0) {
-    return "No matching notes found in Second Brain for '" + keyword + "'.";
-  }
-  return matches.join("\n\n");
+  return matches.length > 0 ? matches.join("\n\n") : "No matching notes found for '" + keyword + "'.";
 }
 
 function getOrCreateSecondBrainDoc() {
   var files = DriveApp.getFilesByName(SECOND_BRAIN_DOC_NAME);
-  if (files.hasNext()) {
-    return DocumentApp.openById(files.next().getId());
-  }
+  if (files.hasNext()) return DocumentApp.openById(files.next().getId());
   var newDoc = DocumentApp.create(SECOND_BRAIN_DOC_NAME);
   newDoc.getBody().appendParagraph("=== WAQAR PIRACHA - AI SECOND BRAIN KNOWLEDGE VAULT ===");
   newDoc.saveAndClose();
@@ -159,25 +186,20 @@ function getOrCreateSecondBrainDoc() {
 }
 
 // ============================================================================
-// 2. VIDEO QUEUE SPREADSHEET FUNCTIONS
+// 3. VIDEO QUEUE SPREADSHEET FUNCTIONS
 // ============================================================================
 
-/**
- * Reads all queued videos from the Google Sheet
- */
 function getVideoQueue() {
   var sheet = getOrCreateVideoQueueSheet();
   var data = sheet.getDataRange().getValues();
   var queue = [];
-  
-  // Row 0 is Headers: [Filename, Account, Title, Description, Hashtags, Status, Updated_At]
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     if (row[0]) {
       queue.push({
         rowIndex: i + 1,
         filename: String(row[0]).trim(),
-        account: String(row[1] || "Account 1").trim(),
+        account: String(row[1] || "Waqar Analytics").trim(),
         title: String(row[2] || ""),
         description: String(row[3] || ""),
         hashtags: String(row[4] || ""),
@@ -189,9 +211,6 @@ function getVideoQueue() {
   return queue;
 }
 
-/**
- * Updates or inserts metadata for a specific video row
- */
 function updateVideoRow(filename, account, title, description, hashtags) {
   var sheet = getOrCreateVideoQueueSheet();
   var data = sheet.getDataRange().getValues();
@@ -209,21 +228,14 @@ function updateVideoRow(filename, account, title, description, hashtags) {
       break;
     }
   }
-  
-  if (!found) {
-    sheet.appendRow([filename, account, title, description, hashtags, "Ready", timestamp]);
-  }
+  if (!found) sheet.appendRow([filename, account, title, description, hashtags, "Ready", timestamp]);
   return "Updated metadata for " + filename;
 }
 
-/**
- * Marks video status in the spreadsheet
- */
 function markVideoStatus(filename, newStatus) {
   var sheet = getOrCreateVideoQueueSheet();
   var data = sheet.getDataRange().getValues();
   var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
-  
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim().toLowerCase() === filename.trim().toLowerCase()) {
       sheet.getRange(i + 1, 6).setValue(newStatus);
@@ -244,36 +256,21 @@ function getOrCreateVideoQueueSheet() {
     var sheet = ss.getActiveSheet();
     sheet.setName("Queue");
     sheet.appendRow(["Video_Filename", "Account_Name", "Title", "Description", "Hashtags", "Status", "Last_Updated"]);
-    sheet.getRange("A1:G1").setFontWeight("bold").setBackground("#1E293B").setFontColor("#FFFFFF");
-    
-    // Seed sample row so user sees how it works
-    sheet.appendRow([
-      "sample_video.mp4",
-      "Waqar Analytics",
-      "Stop Copy-Pasting in Excel! Power BI Automation Hack",
-      "Transforming messy corporate data into interactive executive reporting.",
-      "#PowerBI #ExcelAutomation #SupplyChain #BusinessIntelligence",
-      "Ready",
-      new Date().toLocaleString()
-    ]);
+    sheet.getRange("A1:G1").setFontWeight("bold").setBackground("#0F172A").setFontColor("#10B981");
   }
   return ss.getSheetByName("Queue") || ss.getActiveSheet();
 }
 
 // ============================================================================
-// 3. ZERO-SERVER VIDEO PUBLISHING ENGINE
+// 4. VIDEO PUBLISHING ENGINE (YOUTUBE, INSTAGRAM, TIKTOK)
 // ============================================================================
 
-/**
- * Publishes video file directly from Google Drive to selected channels
- */
 function executePublishVideo(filename, account, title, description, hashtags, platforms) {
-  // 1. Locate video file in Google Drive
   var videoFiles = DriveApp.getFilesByName(filename);
   if (!videoFiles.hasNext()) {
     return {
       status: "error",
-      message: "Video file '" + filename + "' was not found in your Google Drive root or shared folders. Please place it in Drive first."
+      message: "Video file '" + filename + "' was not found in Google Drive. Make sure it is uploaded to Drive."
     };
   }
   
@@ -282,37 +279,30 @@ function executePublishVideo(filename, account, title, description, hashtags, pl
   var tagsArray = hashtags.replace(/#/g, "").split(/\s+/).filter(function(t) { return t.length > 0; });
   var platformResults = {};
   
-  // 2. Publish to YouTube via Google Apps Script Advanced YouTube Service
   if (platforms.indexOf("youtube") !== -1) {
     try {
-      var ytResult = uploadToYouTube(file, title, fullDescription, tagsArray);
-      platformResults["youtube"] = ytResult;
+      platformResults["youtube"] = uploadToYouTube(file, title, fullDescription, tagsArray);
     } catch (err) {
       platformResults["youtube"] = "Error: " + err.toString();
     }
   }
   
-  // 3. Publish to Instagram Reels via Graph API
   if (platforms.indexOf("instagram") !== -1) {
     try {
-      var igResult = uploadToInstagramReels(file, title + "\n\n" + fullDescription, account);
-      platformResults["instagram"] = igResult;
+      platformResults["instagram"] = uploadToInstagramReels(file, title + "\n\n" + fullDescription, account);
     } catch (err) {
       platformResults["instagram"] = "Error: " + err.toString();
     }
   }
   
-  // 4. Publish to TikTok Content Posting API
   if (platforms.indexOf("tiktok") !== -1) {
     try {
-      var ttResult = uploadToTikTok(file, title + " " + hashtags, account);
-      platformResults["tiktok"] = ttResult;
+      platformResults["tiktok"] = uploadToTikTok(file, title + " " + hashtags, account);
     } catch (err) {
       platformResults["tiktok"] = "Error: " + err.toString();
     }
   }
   
-  // Mark status in spreadsheet
   markVideoStatus(filename, "Published ✅");
   
   return {
@@ -320,17 +310,13 @@ function executePublishVideo(filename, account, title, description, hashtags, pl
     filename: filename,
     account: account,
     platforms: platformResults,
-    message: "Video '" + filename + "' processed across selected channels for " + account + "!"
+    message: "Video '" + filename + "' published via Google Drive Robot!"
   };
 }
 
-/**
- * Uploads a video from Drive to YouTube using YouTube Advanced Service
- * Note: Must enable 'YouTube Data API v3' in Apps Script Services (Resources -> Advanced Google services)
- */
 function uploadToYouTube(driveFile, title, description, tags) {
   if (typeof YouTube === "undefined") {
-    return "YouTube Service Notice: Please click 'Services' (+) in Google Apps Script and add 'YouTube Data API v3'. File verified: " + driveFile.getName();
+    return "Notice: Please add 'YouTube Data API v3' in Google Apps Script Services (+) sidebar. Verified file: " + driveFile.getName();
   }
   
   var videoResource = {
@@ -338,7 +324,7 @@ function uploadToYouTube(driveFile, title, description, tags) {
       title: title,
       description: description,
       tags: tags,
-      categoryId: "28" // Science & Technology
+      categoryId: "28"
     },
     status: {
       privacyStatus: "public",
@@ -351,86 +337,43 @@ function uploadToYouTube(driveFile, title, description, tags) {
   return "https://youtu.be/" + response.id;
 }
 
-/**
- * Instagram Reels Video Publishing Helper (Meta Graph API)
- */
 function uploadToInstagramReels(driveFile, caption, accountName) {
-  // Read stored access token from ScriptProperties
-  var userProperties = PropertiesService.getScriptProperties();
-  var igUserId = userProperties.getProperty("IG_USER_ID_" + accountName.replace(/\s+/g, "_")) || userProperties.getProperty("IG_USER_ID");
-  var igAccessToken = userProperties.getProperty("IG_ACCESS_TOKEN_" + accountName.replace(/\s+/g, "_")) || userProperties.getProperty("IG_ACCESS_TOKEN");
+  var props = PropertiesService.getScriptProperties();
+  var igUserId = props.getProperty("IG_USER_ID_" + accountName.replace(/\s+/g, "_")) || props.getProperty("IG_USER_ID");
+  var igToken = props.getProperty("IG_ACCESS_TOKEN_" + accountName.replace(/\s+/g, "_")) || props.getProperty("IG_ACCESS_TOKEN");
   
-  if (!igUserId || !igAccessToken) {
-    return "Instagram Token Notice: Please set 'IG_USER_ID' and 'IG_ACCESS_TOKEN' in Script Properties to auto-push Reels for " + accountName;
+  if (!igUserId || !igToken) {
+    return "Notice: Set 'IG_USER_ID' and 'IG_ACCESS_TOKEN' in Script Properties to auto-push Reels for " + accountName;
   }
   
-  // Make file temporarily web-accessible for Meta's media container ingestion
   var fileUrl = driveFile.getDownloadUrl();
   var containerUrl = "https://graph.facebook.com/v19.0/" + igUserId + "/media";
-  
-  var payload = {
-    media_type: "REELS",
-    video_url: fileUrl,
-    caption: caption,
-    access_token: igAccessToken
-  };
-  
-  var options = {
-    method: "post",
-    payload: payload,
-    muteHttpExceptions: true
-  };
-  
-  var response = UrlFetchApp.fetch(containerUrl, options);
-  var json = JSON.parse(response.getContentText());
+  var payload = { media_type: "REELS", video_url: fileUrl, caption: caption, access_token: igToken };
+  var resp = UrlFetchApp.fetch(containerUrl, { method: "post", payload: payload, muteHttpExceptions: true });
+  var json = JSON.parse(resp.getContentText());
   
   if (json.id) {
-    // Publish container
-    var publishUrl = "https://graph.facebook.com/v19.0/" + igUserId + "/media_publish";
-    var pubPayload = { creation_id: json.id, access_token: igAccessToken };
-    var pubResp = UrlFetchApp.fetch(publishUrl, { method: "post", payload: pubPayload, muteHttpExceptions: true });
+    var pubUrl = "https://graph.facebook.com/v19.0/" + igUserId + "/media_publish";
+    UrlFetchApp.fetch(pubUrl, { method: "post", payload: { creation_id: json.id, access_token: igToken }, muteHttpExceptions: true });
     return "Published to Instagram (ID: " + json.id + ")";
   }
-  return "IG Container Response: " + response.getContentText();
+  return "IG Error: " + resp.getContentText();
 }
 
-/**
- * TikTok Content Posting API Helper
- */
 function uploadToTikTok(driveFile, title, accountName) {
-  var userProperties = PropertiesService.getScriptProperties();
-  var ttToken = userProperties.getProperty("TIKTOK_ACCESS_TOKEN_" + accountName.replace(/\s+/g, "_")) || userProperties.getProperty("TIKTOK_ACCESS_TOKEN");
+  var props = PropertiesService.getScriptProperties();
+  var token = props.getProperty("TIKTOK_ACCESS_TOKEN_" + accountName.replace(/\s+/g, "_")) || props.getProperty("TIKTOK_ACCESS_TOKEN");
+  if (!token) return "Notice: Set 'TIKTOK_ACCESS_TOKEN' in Script Properties for " + accountName;
   
-  if (!ttToken) {
-    return "TikTok Token Notice: Please set 'TIKTOK_ACCESS_TOKEN' in Script Properties to auto-post to TikTok for " + accountName;
-  }
-  
-  // Direct publish endpoint
   var initUrl = "https://open.tiktokapis.com/v2/post/publish/video/init/";
   var payload = {
-    post_info: {
-      title: title,
-      privacy_level: "PUBLIC_TO_EVERYONE",
-      disable_duet: false,
-      disable_stitch: false,
-      disable_comment: false
-    },
-    source_info: {
-      source: "FILE_UPLOAD",
-      video_size: driveFile.getSize(),
-      chunk_size: driveFile.getSize(),
-      total_chunk_count: 1
-    }
+    post_info: { title: title, privacy_level: "PUBLIC_TO_EVERYONE" },
+    source_info: { source: "FILE_UPLOAD", video_size: driveFile.getSize(), chunk_size: driveFile.getSize(), total_chunk_count: 1 }
   };
-  
-  var options = {
-    method: "post",
-    contentType: "application/json",
-    headers: { "Authorization": "Bearer " + ttToken },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
-  
-  var resp = UrlFetchApp.fetch(initUrl, options);
-  return "TikTok API Initialized: " + resp.getContentText().slice(0, 150);
+  var resp = UrlFetchApp.fetch(initUrl, {
+    method: "post", contentType: "application/json",
+    headers: { "Authorization": "Bearer " + token },
+    payload: JSON.stringify(payload), muteHttpExceptions: true
+  });
+  return "TikTok API Init: " + resp.getContentText().slice(0, 150);
 }

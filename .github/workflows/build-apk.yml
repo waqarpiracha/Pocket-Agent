@@ -55,7 +55,7 @@ jobs:
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PocketAgent-APK
+          name: Waqar-SuperAgent-APK
           path: |
             build/apk/**/*.apk
             build/apk/*.apk

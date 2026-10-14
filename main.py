@@ -1,8 +1,8 @@
 """
-Pocket Agent - Autonomous AI Mobile Agent & Zero-Server Video Publisher
-Framework: Python Flet (0.25.2) with Native Flutter Android Rendering
-Backend: 100% Zero-Server via Google Apps Script (google_drive_robot.gs)
-AI Brain: Gemini 2.5 Flash direct REST API (Pure Python standard library)
+Waqar-SuperAgent: Personal Intelligence & Automation Hub
+Mobile Application Architecture: Pure Python Flet (0.25.2)
+Backend: 100% Free Zero-Server Google Drive Robot (google_drive_robot.gs)
+AI Brain: Direct Google Gemini 2.5 Flash REST API (Zero C/Rust extension dependencies)
 """
 
 import ast
@@ -18,25 +18,28 @@ from typing import Any, Dict, List, Optional
 import flet as ft
 
 # ==========================================
-# CONSTANTS & CONFIGURATION KEYS
+# STORAGE KEYS & CONSTANTS
 # ==========================================
-STORAGE_KEY_API_KEY = "pocket_agent_gemini_api_key"
-STORAGE_KEY_SYSTEM_PROMPT = "pocket_agent_system_prompt"
-STORAGE_KEY_CHAT_HISTORY = "pocket_agent_chat_history"
-STORAGE_KEY_NOTES = "pocket_agent_notes"
-STORAGE_KEY_ROBOT_URL = "pocket_agent_google_drive_robot_url"
+STORAGE_KEY_API_KEY = "waqar_superagent_gemini_api_key"
+STORAGE_KEY_SYSTEM_PROMPT = "waqar_superagent_system_prompt"
+STORAGE_KEY_CHAT_HISTORY = "waqar_superagent_chat_history"
+STORAGE_KEY_NOTES = "waqar_superagent_notes"
+STORAGE_KEY_ROBOT_URL = "waqar_superagent_drive_robot_url"
+STORAGE_KEY_DRIVE_FOLDER = "waqar_superagent_drive_folder"
 
 DEFAULT_ROBOT_URL = "https://script.google.com/macros/s/AKfycbw_example_drive_robot/exec"
+DEFAULT_FOLDER = "PocketAgent_Videos"
+
 DEFAULT_SYSTEM_INSTRUCTION = (
-    "You are Pocket Agent, an elite autonomous executive AI assistant and mobile operations specialist. "
-    "You run locally on an Android device for Waqar Piracha (Senior Business Intelligence & Automation Specialist). "
-    "You have access to live tools: "
-    "1) `get_device_datetime`: Device clock and date. "
-    "2) `save_note` & `read_notes`: Local notes and tasks. "
-    "3) `quick_calculator`: Precision mathematical & load formulas. "
-    "4) `query_working_knowledge`: Queries Google Drive AI Second Brain. "
-    "5) `save_to_second_brain`: Saves knowledge to Google Drive Second Brain. "
-    "Always use tools proactively when relevant. Respond with structured, executive-grade Markdown."
+    "You are Waqar-SuperAgent, the personal executive AI assistant for Waqar Aslam Piracha "
+    "(Senior Business Intelligence Consultant, Supply Chain Digital Transformation Specialist & Automation Expert). "
+    "You run locally on Android. You have direct tools to: "
+    "1) `get_device_datetime`: Current device date and time. "
+    "2) `save_note` & `read_notes`: On-device notes and tasks. "
+    "3) `quick_calculator`: Exact math and freight/supply chain formulas. "
+    "4) `query_working_knowledge`: Search Second Brain SOPs, bot catalogs, and notes in Google Drive. "
+    "5) `save_to_second_brain`: Log ideas and operational notes to Google Drive. "
+    "Respond with concise, executive-grade Markdown, featuring bullet points and structured formatting."
 )
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
@@ -73,7 +76,7 @@ SAFE_FUNCTIONS = {
 SAFE_CONSTANTS = {"pi": math.pi, "e": math.e}
 
 
-def _eval_ast_node(node: ast.AST) -> Any:
+def _eval_ast(node: ast.AST) -> Any:
     if isinstance(node, ast.Constant):
         if isinstance(node.value, (int, float)):
             return node.value
@@ -85,31 +88,31 @@ def _eval_ast_node(node: ast.AST) -> Any:
     elif isinstance(node, ast.BinOp):
         op_type = type(node.op)
         if op_type in SAFE_OPERATORS:
-            return SAFE_OPERATORS[op_type](_eval_ast_node(node.left), _eval_ast_node(node.right))
-        raise ValueError(f"Unsupported binary operator: {op_type}")
+            return SAFE_OPERATORS[op_type](_eval_ast(node.left), _eval_ast(node.right))
+        raise ValueError("Unsupported binary operator")
     elif isinstance(node, ast.UnaryOp):
         op_type = type(node.op)
         if op_type in SAFE_OPERATORS:
-            return SAFE_OPERATORS[op_type](_eval_ast_node(node.operand))
-        raise ValueError(f"Unsupported unary operator: {op_type}")
+            return SAFE_OPERATORS[op_type](_eval_ast(node.operand))
+        raise ValueError("Unsupported unary operator")
     elif isinstance(node, ast.Call):
         if isinstance(node.func, ast.Name) and node.func.id in SAFE_FUNCTIONS:
-            args = [_eval_ast_node(arg) for arg in node.args]
+            args = [_eval_ast(arg) for arg in node.args]
             return SAFE_FUNCTIONS[node.func.id](*args)
         raise ValueError("Unsupported function call")
-    raise ValueError("Unsupported syntax")
+    raise ValueError("Unsupported expression")
 
 
-def evaluate_math_expression(expr: str) -> str:
+def evaluate_math(expr: str) -> str:
     try:
         parsed = ast.parse(expr.strip(), mode="eval")
-        return str(_eval_ast_node(parsed.body))
+        return str(_eval_ast(parsed.body))
     except Exception as e:
         return f"Calculation Error: {str(e)}"
 
 
 # ==========================================
-# GEMINI FUNCTION DECLARATIONS
+# GEMINI FUNCTION CALLING TOOL DECLARATIONS
 # ==========================================
 GEMINI_FUNCTION_DECLARATIONS = [
     {
@@ -147,11 +150,11 @@ GEMINI_FUNCTION_DECLARATIONS = [
     },
     {
         "name": "query_working_knowledge",
-        "description": "Queries Google Drive AI Second Brain for SOPs, supply chain patterns, bot catalogs, and notes.",
+        "description": "Queries Waqar's Google Drive AI Second Brain for SOPs, supply chain patterns, bot catalogs, and notes.",
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "search_keyword": {"type": "STRING", "description": "Keyword to search across the Second Brain."}
+                "search_keyword": {"type": "STRING", "description": "Keyword to search across Second Brain."}
             },
             "required": ["search_keyword"],
         },
@@ -175,18 +178,17 @@ GEMINI_FUNCTION_DECLARATIONS = [
 # MAIN APPLICATION CONTROLLER
 # ==========================================
 def main(page: ft.Page):
-    page.title = "Pocket Agent"
+    page.title = "Waqar-SuperAgent"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.spacing = 0
-    page.bgcolor = "#0D1117"
+    page.bgcolor = "#0B0F17"  # High-contrast deep obsidian
 
     page.theme = ft.Theme(
-        color_scheme_seed="#3B82F6",
+        color_scheme_seed="#10B981",  # Emerald theme seed
         visual_density=ft.ThemeVisualDensity.COMPACT,
     )
 
-    # State
     tools_executed_in_turn: List[str] = []
 
     # Storage accessors
@@ -211,12 +213,14 @@ def main(page: ft.Page):
     def get_robot_url() -> str:
         return page.client_storage.get(STORAGE_KEY_ROBOT_URL) or DEFAULT_ROBOT_URL
 
+    def get_drive_folder() -> str:
+        return page.client_storage.get(STORAGE_KEY_DRIVE_FOLDER) or DEFAULT_FOLDER
+
     # ------------------------------------------
-    # TOOL HANDLERS
+    # SECOND BRAIN TOOLS
     # ------------------------------------------
     def tool_get_device_datetime(args: Dict[str, Any]) -> str:
-        now = datetime.datetime.now()
-        return now.strftime("%A, %B %d, %Y - %I:%M:%S %p")
+        return datetime.datetime.now().strftime("%A, %B %d, %Y - %I:%M:%S %p")
 
     def tool_save_note(args: Dict[str, Any]) -> str:
         title = args.get("title", "Untitled").strip()
@@ -237,44 +241,40 @@ def main(page: ft.Page):
         return "\n".join(lines)
 
     def tool_quick_calculator(args: Dict[str, Any]) -> str:
-        return evaluate_math_expression(args.get("expression", ""))
+        return evaluate_math(args.get("expression", ""))
 
     def tool_query_working_knowledge(args: Dict[str, Any]) -> str:
         kw = args.get("search_keyword", "").strip()
         url = get_robot_url()
         try:
             params = urllib.parse.urlencode({"action": "query_second_brain", "q": kw})
-            req = urllib.request.Request(f"{url}?{params}", headers={"User-Agent": "PocketAgent-Android/1.0"})
+            req = urllib.request.Request(f"{url}?{params}", headers={"User-Agent": "WaqarSuperAgent-Android/1.0"})
             with urllib.request.urlopen(req, timeout=12) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                return f"Second Brain results for '{kw}':\n" + str(data.get("results", data))
+                return f"Second Brain Query for '{kw}':\n" + str(data.get("results", data))
         except Exception as e:
-            # Fallback to offline notes search
             notes = get_notes()
             matching = [f"**{t}**: {d.get('content')}" for t, d in notes.items() if kw.lower() in t.lower() or kw.lower() in d.get("content", "").lower()]
             if matching:
                 return f"(Offline Mode) Local notes matching '{kw}':\n" + "\n".join(matching)
-            return f"Second Brain notice: Could not connect to Google Drive Robot ({str(e)})."
+            return f"Second Brain notice: Could not contact Google Drive Robot ({str(e)})."
 
     def tool_save_to_second_brain(args: Dict[str, Any]) -> str:
         topic = args.get("topic", "General")
         content = args.get("content", "")
         url = get_robot_url()
         ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Save locally first
         tool_save_note({"title": f"[{topic}] {ts}", "content": content})
-
         try:
             payload = json.dumps({"action": "save_second_brain", "topic": topic, "content": content}).encode("utf-8")
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "PocketAgent-Android/1.0"}, method="POST")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "WaqarSuperAgent-Android/1.0"}, method="POST")
             with urllib.request.urlopen(req, timeout=12) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                return f"Saved to Second Brain Google Doc: {data.get('message', 'Success')}"
+                return f"Logged to Second Brain: {data.get('message', 'Success')}"
         except Exception as e:
             return f"Saved locally on device. Drive sync deferred ({str(e)})."
 
-    TOOL_DISPATCH_MAP = {
+    TOOL_DISPATCH = {
         "get_device_datetime": tool_get_device_datetime,
         "save_note": tool_save_note,
         "read_notes": tool_read_notes,
@@ -295,11 +295,11 @@ def main(page: ft.Page):
             "generationConfig": {"temperature": 0.4, "maxOutputTokens": 2048},
         }
         encoded = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(endpoint, data=encoded, headers={"Content-Type": "application/json", "User-Agent": "PocketAgent-Android/1.0"}, method="POST")
+        req = urllib.request.Request(endpoint, data=encoded, headers={"Content-Type": "application/json", "User-Agent": "WaqarSuperAgent-Android/1.0"}, method="POST")
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    def run_agent_turn(user_message: str) -> str:
+    def run_agent_turn(user_msg: str) -> str:
         api_key = get_api_key()
         if not api_key:
             raise ValueError("Gemini API key is missing. Tap the Settings icon in the top right to configure it.")
@@ -314,7 +314,7 @@ def main(page: ft.Page):
             if text:
                 contents.append({"role": "user" if role == "user" else "model", "parts": [{"text": text}]})
 
-        contents.append({"role": "user", "parts": [{"text": user_message}]})
+        contents.append({"role": "user", "parts": [{"text": user_msg}]})
 
         for _ in range(5):
             api_result = call_gemini_api(contents, sys_prompt, api_key)
@@ -332,7 +332,7 @@ def main(page: ft.Page):
                     text_acc += p["text"]
 
             if not fn_call:
-                return text_acc or "*(Completed operations)*"
+                return text_acc or "*(Agent executed operations)*"
 
             fn_name = fn_call.get("name", "")
             fn_args = fn_call.get("args", {})
@@ -342,31 +342,31 @@ def main(page: ft.Page):
             tool_badge.visible = True
             page.update()
 
-            handler = TOOL_DISPATCH_MAP.get(fn_name)
+            handler = TOOL_DISPATCH.get(fn_name)
             tool_out = handler(fn_args) if handler else f"Unknown tool: '{fn_name}'"
 
             contents.append({"role": "model", "parts": [{"functionCall": {"name": fn_name, "args": fn_args}}]})
             contents.append({"role": "user", "parts": [{"functionResponse": {"name": fn_name, "response": {"output": str(tool_out)}}}]})
 
-        return "Agent completed multi-turn operations."
+        return "Agent completed multi-turn tool operations."
 
     # ------------------------------------------
     # TAB 1: SECOND BRAIN CHAT UI
     # ------------------------------------------
     chat_list = ft.ListView(expand=True, spacing=14, padding=ft.padding.symmetric(horizontal=16, vertical=16), auto_scroll=True)
-    tool_status_text = ft.Text(value="", color="#93C5FD", size=12, weight=ft.FontWeight.W_500, expand=True)
+    tool_status_text = ft.Text(value="", color="#A7F3D0", size=12, weight=ft.FontWeight.W_500, expand=True)
 
     tool_badge = ft.Container(
         visible=False,
-        bgcolor="#1E293B",
+        bgcolor="#064E3B",
         border_radius=12,
         padding=ft.padding.symmetric(horizontal=12, vertical=8),
         margin=ft.padding.symmetric(horizontal=16, vertical=4),
-        border=ft.border.all(1, "#334155"),
+        border=ft.border.all(1, "#10B981"),
         content=ft.Row(
             controls=[
-                ft.ProgressRing(width=14, height=14, stroke_width=2, color="#60A5FA"),
-                ft.Icon(name=ft.Icons.AUTO_AWESOME_ROUNDED, size=15, color="#F59E0B"),
+                ft.ProgressRing(width=14, height=14, stroke_width=2, color="#34D399"),
+                ft.Icon(name=ft.Icons.AUTO_AWESOME_ROUNDED, size=15, color="#FBBF24"),
                 tool_status_text,
             ],
             spacing=8,
@@ -379,14 +379,14 @@ def main(page: ft.Page):
         if tools_used and not is_user:
             tool_chips = [
                 ft.Container(
-                    bgcolor="#1E293B",
-                    border=ft.border.all(1, "#38BDF8"),
+                    bgcolor="#064E3B",
+                    border=ft.border.all(1, "#10B981"),
                     border_radius=8,
                     padding=ft.padding.symmetric(horizontal=8, vertical=3),
                     content=ft.Row(
                         controls=[
-                            ft.Icon(name=ft.Icons.BOLT_ROUNDED, size=12, color="#38BDF8"),
-                            ft.Text(f"tool: {t}", size=11, color="#BAE6FD", weight=ft.FontWeight.W_600),
+                            ft.Icon(name=ft.Icons.BOLT_ROUNDED, size=12, color="#34D399"),
+                            ft.Text(f"tool: {t}", size=11, color="#D1FAE5", weight=ft.FontWeight.W_600),
                         ],
                         spacing=4,
                         tight=True,
@@ -401,13 +401,13 @@ def main(page: ft.Page):
                 content=ft.Column(
                     controls=[
                         ft.Text(value=text, color="#FFFFFF", size=15, selectable=True),
-                        ft.Text(value=timestamp, color="#93C5FD", size=10, text_align=ft.TextAlign.RIGHT),
+                        ft.Text(value=timestamp, color="#A7F3D0", size=10, text_align=ft.TextAlign.RIGHT),
                     ],
                     tight=True,
                     spacing=4,
                     horizontal_alignment=ft.CrossAxisAlignment.END,
                 ),
-                bgcolor="#2563EB",
+                bgcolor="#047857",  # Deep emerald user bubble
                 border_radius=ft.border_radius.only(top_left=16, top_right=4, bottom_left=16, bottom_right=16),
                 padding=ft.padding.symmetric(horizontal=14, vertical=10),
             )
@@ -415,7 +415,7 @@ def main(page: ft.Page):
                 controls=[
                     ft.Container(expand=True),
                     bubble,
-                    ft.CircleAvatar(content=ft.Icon(name=ft.Icons.PERSON_ROUNDED, size=18, color="#FFFFFF"), bgcolor="#1D4ED8", radius=16),
+                    ft.CircleAvatar(content=ft.Icon(name=ft.Icons.PERSON_ROUNDED, size=18, color="#FFFFFF"), bgcolor="#065F46", radius=16),
                 ],
                 alignment=ft.MainAxisAlignment.END,
                 vertical_alignment=ft.CrossAxisAlignment.START,
@@ -431,23 +431,23 @@ def main(page: ft.Page):
                     selectable=True,
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
                     code_theme="atom-one-dark",
-                    code_style=ft.TextStyle(font_family="monospace", size=13, color="#A7F3D0"),
+                    code_style=ft.TextStyle(font_family="monospace", size=13, color="#6EE7B7"),
                 )
             )
             if timestamp:
-                col_items.append(ft.Text(value=timestamp, color="#64748B", size=10))
+                col_items.append(ft.Text(value=timestamp, color="#6B7280", size=10))
 
             card = ft.Container(
                 content=ft.Column(controls=col_items, tight=True, spacing=6),
-                bgcolor="#161B22",
+                bgcolor="#111827",
                 border_radius=ft.border_radius.only(top_left=4, top_right=16, bottom_left=16, bottom_right=16),
-                border=ft.border.all(1, "#30363D"),
+                border=ft.border.all(1, "#1F2937"),
                 padding=ft.padding.symmetric(horizontal=14, vertical=12),
                 expand=True,
             )
             return ft.Row(
                 controls=[
-                    ft.CircleAvatar(content=ft.Icon(name=ft.Icons.SMART_TOY_ROUNDED, size=18, color="#38BDF8"), bgcolor="#0F172A", radius=16),
+                    ft.CircleAvatar(content=ft.Icon(name=ft.Icons.PSYCHOLOGY_ROUNDED, size=18, color="#10B981"), bgcolor="#064E3B", radius=16),
                     card,
                 ],
                 alignment=ft.MainAxisAlignment.START,
@@ -465,9 +465,9 @@ def main(page: ft.Page):
                     padding=ft.padding.symmetric(vertical=24, horizontal=16),
                     content=ft.Column(
                         controls=[
-                            ft.Icon(name=ft.Icons.PSYCHOLOGY_ROUNDED, size=46, color="#38BDF8"),
-                            ft.Text("Second Brain Active", size=18, weight=ft.FontWeight.BOLD, color="#F8FAFC"),
-                            ft.Text("Ask anything about your supply chain SOPs, bots, or notes.", size=13, color="#94A3B8", text_align=ft.TextAlign.CENTER),
+                            ft.Icon(name=ft.Icons.AUTO_AWESOME_ROUNDED, size=46, color="#10B981"),
+                            ft.Text("Second Brain Active", size=18, weight=ft.FontWeight.BOLD, color="#F9FAFB"),
+                            ft.Text("Ask anything about your supply chain SOPs, bots, or notes.", size=13, color="#9CA3AF", text_align=ft.TextAlign.CENTER),
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=6,
@@ -487,12 +487,13 @@ def main(page: ft.Page):
         expand=True,
         border_radius=24,
         filled=True,
-        fill_color="#161B22",
-        border_color="#30363D",
+        fill_color="#111827",
+        border_color="#1F2937",
+        focused_border_color="#10B981",
         content_padding=ft.padding.symmetric(horizontal=16, vertical=10),
     )
 
-    send_btn = ft.IconButton(icon=ft.Icons.ARROW_UPWARD_ROUNDED, bgcolor="#2563EB", icon_color="#FFFFFF", width=42, height=42)
+    send_btn = ft.IconButton(icon=ft.Icons.ARROW_UPWARD_ROUNDED, bgcolor="#10B981", icon_color="#FFFFFF", width=42, height=42)
 
     def on_send_chat(e):
         txt = chat_input.value.strip()
@@ -542,9 +543,9 @@ def main(page: ft.Page):
             chat_list,
             tool_badge,
             ft.Container(
-                bgcolor="#161B22",
+                bgcolor="#111827",
                 padding=ft.padding.only(left=12, right=12, top=6, bottom=10),
-                border=ft.border.only(top=ft.BorderSide(1, "#30363D")),
+                border=ft.border.only(top=ft.BorderSide(1, "#1F2937")),
                 content=ft.Row([chat_input, send_btn], spacing=8),
             ),
         ],
@@ -553,18 +554,56 @@ def main(page: ft.Page):
     )
 
     # ------------------------------------------
-    # TAB 2: ZERO-SERVER VIDEO PUBLISHER UI
+    # TAB 2: GOOGLE DRIVE CLOUD VIDEO BROWSER & YOUTUBE PUBLISHER
     # ------------------------------------------
-    video_dropdown = ft.Dropdown(
-        label="Select Queued Video from Google Drive",
-        border_color="#3B82F6",
+    drive_folder_field = ft.TextField(
+        label="Google Drive Folder Name / Filter",
+        value=get_drive_folder(),
+        hint_text="e.g. PocketAgent_Videos or 'all'",
+        border_color="#10B981",
         bgcolor="#0F172A",
-        options=[],
+        expand=True,
+    )
+
+    drive_video_list = ft.Column(spacing=8)
+
+    selected_video_badge = ft.Container(
+        visible=False,
+        bgcolor="#064E3B",
+        border_radius=10,
+        padding=10,
+        border=ft.border.all(1, "#10B981"),
+        content=ft.Row(
+            controls=[
+                ft.Icon(name=ft.Icons.CHECK_CIRCLE_ROUNDED, color="#34D399", size=20),
+                ft.Text("Target Video Selected", weight=ft.FontWeight.BOLD, color="#ECFDF5", expand=True),
+            ],
+            spacing=8,
+        ),
+    )
+
+    selected_video_name = ft.Text("", weight=ft.FontWeight.BOLD, color="#34D399", size=14)
+    selected_video_meta = ft.Text("", color="#9CA3AF", size=12)
+
+    selected_card = ft.Container(
+        visible=False,
+        bgcolor="#111827",
+        border_radius=12,
+        padding=12,
+        border=ft.border.all(1, "#374151"),
+        content=ft.Column(
+            controls=[
+                ft.Row([ft.Icon(name=ft.Icons.MOVIE_ROUNDED, color="#10B981", size=18), selected_video_name], spacing=8),
+                selected_video_meta,
+            ],
+            tight=True,
+            spacing=4,
+        ),
     )
 
     account_dropdown = ft.Dropdown(
-        label="Target Publishing Account",
-        border_color="#3B82F6",
+        label="Target YouTube & Media Account",
+        border_color="#10B981",
         bgcolor="#0F172A",
         value="Waqar Analytics",
         options=[
@@ -575,90 +614,165 @@ def main(page: ft.Page):
         ],
     )
 
-    filename_field = ft.TextField(label="Video Filename in Google Drive", hint_text="video_01.mp4", border_color="#30363D", bgcolor="#0F172A")
-    title_field = ft.TextField(label="Video Title", hint_text="Compelling, punchy title", border_color="#30363D", bgcolor="#0F172A")
-    desc_field = ft.TextField(label="Description", multiline=True, min_lines=2, max_lines=4, hint_text="Impactful 2-line summary", border_color="#30363D", bgcolor="#0F172A")
-    hashtags_field = ft.TextField(label="Hashtags", hint_text="#SupplyChain #PowerBI #SAP", border_color="#30363D", bgcolor="#0F172A")
+    target_filename_input = ft.TextField(
+        label="Selected Drive Video File",
+        hint_text="sample_video.mp4",
+        border_color="#374151",
+        bgcolor="#0F172A",
+    )
 
-    chk_youtube = ft.Checkbox(label="YouTube Shorts", value=True, active_color="#EF4444")
+    title_input = ft.TextField(
+        label="Video Title",
+        hint_text="Enter YouTube title or tap 'AI Magic Metadata'",
+        border_color="#374151",
+        bgcolor="#0F172A",
+    )
+
+    desc_input = ft.TextField(
+        label="Description",
+        multiline=True,
+        min_lines=2,
+        max_lines=4,
+        hint_text="Compelling description with call to action",
+        border_color="#374151",
+        bgcolor="#0F172A",
+    )
+
+    hashtags_input = ft.TextField(
+        label="Hashtags & Tags",
+        hint_text="#SupplyChain #PowerBI #Excel #WaqarAnalytics",
+        border_color="#374151",
+        bgcolor="#0F172A",
+    )
+
+    chk_youtube = ft.Checkbox(label="YouTube Shorts / Video", value=True, active_color="#EF4444")
     chk_instagram = ft.Checkbox(label="Instagram Reels", value=True, active_color="#EC4899")
     chk_tiktok = ft.Checkbox(label="TikTok", value=True, active_color="#38BDF8")
 
-    publish_status_card = ft.Container(
+    publish_result_card = ft.Container(
         visible=False,
-        bgcolor="#1E293B",
+        bgcolor="#064E3B",
         border_radius=12,
-        padding=12,
-        border=ft.border.all(1, "#3B82F6"),
-        content=ft.Text("", size=13, color="#F8FAFC"),
+        padding=14,
+        border=ft.border.all(1, "#10B981"),
+        content=ft.Text("", size=13, color="#ECFDF5"),
     )
 
-    def load_queue_from_doc(e):
-        url = get_robot_url()
-        video_dropdown.options.clear()
-        page.snack_bar = ft.SnackBar(content=ft.Text("Contacting Google Drive Robot..."), bgcolor="#1E293B")
+    def select_video_item(video_info: Dict[str, Any]):
+        fn = video_info.get("name", "")
+        size_mb = video_info.get("sizeMb", "0")
+        updated = video_info.get("updatedAt", "")
+
+        target_filename_input.value = fn
+        title_input.value = fn.replace(".mp4", "").replace("_", " ").title()
+
+        selected_video_name.value = fn
+        selected_video_meta.value = f"Size: {size_mb} MB  •  Last Modified: {updated} (Google Drive)"
+        selected_card.visible = True
+        selected_video_badge.visible = True
+
+        page.snack_bar = ft.SnackBar(content=ft.Text(f"Selected '{fn}' from Google Drive"), bgcolor="#047857")
         page.snack_bar.open = True
         page.update()
 
+    def browse_drive_videos(e):
+        folder = drive_folder_field.value.strip() or "all"
+        page.client_storage.set(STORAGE_KEY_DRIVE_FOLDER, folder)
+        url = get_robot_url()
+
+        drive_video_list.controls.clear()
+        drive_video_list.controls.append(
+            ft.Row([ft.ProgressRing(width=16, height=16, stroke_width=2), ft.Text(f"Scanning Google Drive for videos in '{folder}'...", color="#9CA3AF")], spacing=8)
+        )
+        page.update()
+
         try:
-            req = urllib.request.Request(f"{url}?action=get_video_queue", headers={"User-Agent": "PocketAgent-Android/1.0"})
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            params = urllib.parse.urlencode({"action": "list_drive_videos", "folder": folder})
+            req = urllib.request.Request(f"{url}?{params}", headers={"User-Agent": "WaqarSuperAgent-Android/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-                queue = data.get("queue", [])
-                if not queue:
-                    page.snack_bar = ft.SnackBar(content=ft.Text("Queue is empty. Created a sample row in Google Sheet!"), bgcolor="#F59E0B")
-                    page.snack_bar.open = True
+                videos = data.get("videos", [])
+
+                drive_video_list.controls.clear()
+                if not videos:
+                    drive_video_list.controls.append(
+                        ft.Container(
+                            padding=12,
+                            bgcolor="#1F2937",
+                            border_radius=8,
+                            content=ft.Text(f"No video files found in Google Drive folder '{folder}'. Place your .mp4 files into Google Drive and tap Scan again.", color="#FBBF24", size=13),
+                        )
+                    )
                     page.update()
                     return
 
-                for item in queue:
-                    fn = item.get("filename", "")
-                    title = item.get("title", "")
-                    status = item.get("status", "")
-                    label = f"{fn} [{status}]"
-                    video_dropdown.options.append(ft.dropdown.Option(key=fn, text=label))
+                drive_video_list.controls.append(
+                    ft.Text(f"Found {len(videos)} video file(s) in Google Drive (Tap to select):", size=13, weight=ft.FontWeight.BOLD, color="#34D399")
+                )
 
-                # Auto-select first item
-                first = queue[0]
-                video_dropdown.value = first.get("filename")
-                filename_field.value = first.get("filename", "")
-                title_field.value = first.get("title", "")
-                desc_field.value = first.get("description", "")
-                hashtags_field.value = first.get("hashtags", "")
-                account_dropdown.value = first.get("account", "Waqar Analytics")
+                for v in videos:
+                    fn = v.get("name", "video.mp4")
+                    sz = v.get("sizeMb", "?")
+                    dt = v.get("updatedAt", "")
 
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"Loaded {len(queue)} video(s) from Google Drive!"), bgcolor="#10B981")
+                    # Create interactive card for each drive video
+                    v_card = ft.Container(
+                        bgcolor="#111827",
+                        border_radius=10,
+                        border=ft.border.all(1, "#374151"),
+                        padding=12,
+                        content=ft.Row(
+                            controls=[
+                                ft.Icon(name=ft.Icons.VIDEO_FILE_ROUNDED, color="#10B981", size=24),
+                                ft.Column(
+                                    controls=[
+                                        ft.Text(fn, weight=ft.FontWeight.BOLD, size=13, color="#F9FAFB"),
+                                        ft.Text(f"{sz} MB • {dt}", size=11, color="#9CA3AF"),
+                                    ],
+                                    spacing=2,
+                                    expand=True,
+                                ),
+                                ft.ElevatedButton(
+                                    "Select",
+                                    icon=ft.Icons.TOUCH_APP_ROUNDED,
+                                    style=ft.ButtonStyle(bgcolor="#047857", color="#FFFFFF"),
+                                    on_click=lambda ev, vi=v: select_video_item(vi),
+                                ),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=10,
+                        ),
+                    )
+                    drive_video_list.controls.append(v_card)
+
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"Retrieved {len(videos)} videos from Google Drive!"), bgcolor="#047857")
                 page.snack_bar.open = True
                 page.update()
         except Exception as err:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Error loading queue: {str(err)}"), bgcolor="#EF4444")
-            page.snack_bar.open = True
+            drive_video_list.controls.clear()
+            drive_video_list.controls.append(
+                ft.Text(f"⚠️ Drive Connection Error: {str(err)}\nMake sure you deployed google_drive_robot.gs and set your Web App URL in Settings.", color="#EF4444", size=12)
+            )
             page.update()
 
-    def on_video_selected(e):
-        fn = video_dropdown.value
-        filename_field.value = fn
-        page.update()
-
-    video_dropdown.on_change = on_video_selected
-
-    def generate_ai_hashtags(e):
+    def generate_ai_metadata(e):
         api_key = get_api_key()
         if not api_key:
             open_settings(e)
             return
 
-        topic = title_field.value.strip() or filename_field.value.strip() or "Business Intelligence & Supply Chain"
-        page.snack_bar = ft.SnackBar(content=ft.Text("✨ Gemini 2.5 Flash crafting viral metadata..."), bgcolor="#3B82F6")
+        target_name = target_filename_input.value.strip() or "Supply Chain Automation Video"
+        page.snack_bar = ft.SnackBar(content=ft.Text("✨ Gemini 2.5 Flash analyzing video & crafting viral metadata..."), bgcolor="#10B981")
         page.snack_bar.open = True
         page.update()
 
         prompt = (
-            f"Write optimized metadata for a high-converting short vertical video about: '{topic}'. "
-            "Return a JSON object with three keys: "
+            f"You are a top viral YouTube Shorts and LinkedIn video strategist for Waqar Piracha "
+            f"(Senior BI & Supply Chain Consultant). The video file is named: '{target_name}'. "
+            "Write highly engaging, high-CTR viral metadata formatted as raw JSON with three keys: "
             "'title' (punchy 6-10 word title with an emoji), "
-            "'description' (2 clear lines explaining the business impact and CTA to connect on LinkedIn), "
-            "'hashtags' (6-8 trending hashtags including #SupplyChain #PowerBI #Excel #WaqarAnalytics). "
+            "'description' (2 high-impact lines explaining the automated solution, business ROI, and CTA to connect on LinkedIn), "
+            "'hashtags' (6-8 trending tags e.g. #SupplyChain #PowerBI #Excel #WaqarAnalytics #Kinaxis). "
             "Return raw JSON only, no markdown code block fences."
         )
 
@@ -674,35 +788,34 @@ def main(page: ft.Page):
                 txt = res["candidates"][0]["content"]["parts"][0]["text"]
                 parsed = json.loads(txt)
 
-                title_field.value = parsed.get("title", title_field.value)
-                desc_field.value = parsed.get("description", desc_field.value)
-                hashtags_field.value = parsed.get("hashtags", hashtags_field.value)
+                title_input.value = parsed.get("title", title_input.value)
+                desc_input.value = parsed.get("description", desc_input.value)
+                hashtags_input.value = parsed.get("hashtags", hashtags_input.value)
 
-                # Sync back to Google Sheet automatically
+                # Sync to Queue in Drive
                 url = get_robot_url()
                 sync_payload = json.dumps({
                     "action": "update_video_metadata",
-                    "filename": filename_field.value,
+                    "filename": target_filename_input.value,
                     "account": account_dropdown.value,
-                    "title": title_field.value,
-                    "description": desc_field.value,
-                    "hashtags": hashtags_field.value,
+                    "title": title_input.value,
+                    "description": desc_input.value,
+                    "hashtags": hashtags_input.value,
                 }).encode("utf-8")
-                sync_req = urllib.request.Request(url, data=sync_payload, headers={"Content-Type": "application/json"}, method="POST")
-                urllib.request.urlopen(sync_req, timeout=10)
+                urllib.request.urlopen(urllib.request.Request(url, data=sync_payload, headers={"Content-Type": "application/json"}, method="POST"), timeout=8)
 
-                page.snack_bar = ft.SnackBar(content=ft.Text("✨ Metadata generated and synced to Google Sheet!"), bgcolor="#10B981")
+                page.snack_bar = ft.SnackBar(content=ft.Text("✨ AI Metadata generated & synced to Google Drive Sheet!"), bgcolor="#047857")
                 page.snack_bar.open = True
                 page.update()
         except Exception as err:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"AI Generation Error: {str(err)}"), bgcolor="#EF4444")
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"AI Error: {str(err)}"), bgcolor="#EF4444")
             page.snack_bar.open = True
             page.update()
 
-    def upload_video_now(e):
-        fn = filename_field.value.strip()
+    def publish_video_from_drive(e):
+        fn = target_filename_input.value.strip()
         if not fn:
-            page.snack_bar = ft.SnackBar(content=ft.Text("Please select or enter a video filename."), bgcolor="#EF4444")
+            page.snack_bar = ft.SnackBar(content=ft.Text("Please select a video file from Google Drive above."), bgcolor="#EF4444")
             page.snack_bar.open = True
             page.update()
             return
@@ -716,15 +829,15 @@ def main(page: ft.Page):
             platforms.append("tiktok")
 
         if not platforms:
-            page.snack_bar = ft.SnackBar(content=ft.Text("Please select at least one platform to publish to."), bgcolor="#EF4444")
+            page.snack_bar = ft.SnackBar(content=ft.Text("Please select at least one publishing platform."), bgcolor="#EF4444")
             page.snack_bar.open = True
             page.update()
             return
 
-        publish_status_card.visible = True
-        publish_status_card.content = ft.Row([
-            ft.ProgressRing(width=16, height=16, stroke_width=2),
-            ft.Text(f"🚀 Google Drive Robot is processing '{fn}' across {', '.join(platforms)}..."),
+        publish_result_card.visible = True
+        publish_result_card.content = ft.Row([
+            ft.ProgressRing(width=16, height=16, stroke_width=2, color="#34D399"),
+            ft.Text(f"🚀 Google Drive Robot is uploading '{fn}' directly to {', '.join(platforms)}..."),
         ], spacing=10)
         page.update()
 
@@ -734,27 +847,27 @@ def main(page: ft.Page):
                 "action": "publish_video",
                 "filename": fn,
                 "account": account_dropdown.value,
-                "title": title_field.value,
-                "description": desc_field.value,
-                "hashtags": hashtags_field.value,
+                "title": title_input.value,
+                "description": desc_input.value,
+                "hashtags": hashtags_input.value,
                 "platforms": platforms,
             }).encode("utf-8")
 
-            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "PocketAgent-Android/1.0"}, method="POST")
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json", "User-Agent": "WaqarSuperAgent-Android/1.0"}, method="POST")
             with urllib.request.urlopen(req, timeout=60) as resp:
                 res = json.loads(resp.read().decode("utf-8"))
                 status = res.get("status", "unknown")
                 msg = res.get("message", "")
                 p_results = res.get("platforms", {})
-                
+
                 res_lines = [f"**Status: {status.upper()}**\n{msg}\n"]
                 for p, val in p_results.items():
                     res_lines.append(f"• **{p.title()}**: {val}")
 
-                publish_status_card.content = ft.Markdown("\n".join(res_lines))
+                publish_result_card.content = ft.Markdown("\n".join(res_lines))
                 page.update()
         except Exception as err:
-            publish_status_card.content = ft.Text(f"⚠️ Upload Error: {str(err)}", color="#EF4444")
+            publish_result_card.content = ft.Text(f"⚠️ Upload Error: {str(err)}", color="#EF4444")
             page.update()
 
     tab2_content = ft.ListView(
@@ -763,53 +876,61 @@ def main(page: ft.Page):
         spacing=12,
         controls=[
             ft.Row([
-                ft.Icon(name=ft.Icons.CLOUD_DONE_ROUNDED, color="#10B981", size=22),
-                ft.Text("Zero-Server Video Publisher", size=17, weight=ft.FontWeight.BOLD),
+                ft.Icon(name=ft.Icons.CLOUD_SYNC_ROUNDED, color="#10B981", size=22),
+                ft.Text("Google Drive Video Browser & YouTube Publisher", size=16, weight=ft.FontWeight.BOLD),
             ], spacing=8),
-            ft.Text("Reads videos directly from Google Drive and uploads to YouTube, Instagram, and TikTok without needing n8n.", size=12, color="#94A3B8"),
-            
-            ft.ElevatedButton(
-                "📥 Load Videos from My Document",
-                icon=ft.Icons.SYNC_ROUNDED,
-                on_click=load_queue_from_doc,
-                style=ft.ButtonStyle(bgcolor="#1E293B", color="#38BDF8"),
-            ),
-            video_dropdown,
-            account_dropdown,
-            filename_field,
-            title_field,
-            desc_field,
-            hashtags_field,
-            
-            ft.Text("Destination Platforms:", size=13, weight=ft.FontWeight.BOLD),
-            ft.Row([chk_youtube, chk_instagram, chk_tiktok], wrap=True, spacing=10),
+            ft.Text("Pick videos stored directly in Google Drive and upload to YouTube with zero local storage requirements.", size=12, color="#9CA3AF"),
             
             ft.Row([
-                ft.OutlinedButton(
-                    "✨ AI Magic Hashtags",
-                    icon=ft.Icons.AUTO_AWESOME_ROUNDED,
-                    on_click=generate_ai_hashtags,
+                drive_folder_field,
+                ft.ElevatedButton(
+                    "🔍 Scan Drive",
+                    icon=ft.Icons.REFRESH_ROUNDED,
+                    on_click=browse_drive_videos,
+                    style=ft.ButtonStyle(bgcolor="#065F46", color="#FFFFFF"),
+                    height=50,
                 ),
-            ], alignment=ft.MainAxisAlignment.START),
-            
+            ], spacing=8),
+
+            drive_video_list,
+            selected_video_badge,
+            selected_card,
+
+            account_dropdown,
+            target_filename_input,
+            title_input,
+            desc_input,
+            hashtags_input,
+
+            ft.Text("Publishing Channels:", size=13, weight=ft.FontWeight.BOLD),
+            ft.Row([chk_youtube, chk_instagram, chk_tiktok], wrap=True, spacing=10),
+
+            ft.Row([
+                ft.OutlinedButton(
+                    "✨ AI Magic Metadata",
+                    icon=ft.Icons.AUTO_AWESOME_ROUNDED,
+                    on_click=generate_ai_metadata,
+                ),
+            ]),
+
             ft.ElevatedButton(
-                "🚀 Upload Video Now",
+                "🚀 Publish from Google Drive to YouTube",
                 icon=ft.Icons.ROCKET_LAUNCH_ROUNDED,
-                on_click=upload_video_now,
+                on_click=publish_video_from_drive,
                 height=48,
                 style=ft.ButtonStyle(bgcolor="#10B981", color="#FFFFFF"),
             ),
-            publish_status_card,
-            ft.Container(height=20),
+            publish_result_card,
+            ft.Container(height=24),
         ],
     )
 
     # ------------------------------------------
     # SETTINGS MODAL
     # ------------------------------------------
-    api_key_input = ft.TextField(label="Gemini API Key", password=True, can_reveal_password=True, hint_text="AIzaSy...", border_color="#3B82F6", bgcolor="#0F172A")
-    robot_url_input = ft.TextField(label="Google Drive Robot URL (script.google.com)", hint_text="https://script.google.com/macros/s/.../exec", border_color="#3B82F6", bgcolor="#0F172A")
-    sys_prompt_input = ft.TextField(label="System Persona", multiline=True, min_lines=2, max_lines=4, border_color="#3B82F6", bgcolor="#0F172A")
+    api_key_input = ft.TextField(label="Gemini API Key", password=True, can_reveal_password=True, hint_text="AIzaSy...", border_color="#10B981", bgcolor="#0F172A")
+    robot_url_input = ft.TextField(label="Google Drive Robot Web App URL", hint_text="https://script.google.com/macros/s/.../exec", border_color="#10B981", bgcolor="#0F172A")
+    sys_prompt_input = ft.TextField(label="System Persona", multiline=True, min_lines=2, max_lines=4, border_color="#10B981", bgcolor="#0F172A")
 
     def save_settings(e):
         page.client_storage.set(STORAGE_KEY_API_KEY, api_key_input.value.strip())
@@ -817,7 +938,7 @@ def main(page: ft.Page):
         page.client_storage.set(STORAGE_KEY_SYSTEM_PROMPT, sys_prompt_input.value.strip() or DEFAULT_SYSTEM_INSTRUCTION)
         if page.dialog:
             page.dialog.open = False
-        page.snack_bar = ft.SnackBar(content=ft.Text("Settings saved!"), bgcolor="#10B981")
+        page.snack_bar = ft.SnackBar(content=ft.Text("Settings saved!"), bgcolor="#047857")
         page.snack_bar.open = True
         page.update()
 
@@ -828,11 +949,11 @@ def main(page: ft.Page):
 
         settings_dlg = ft.AlertDialog(
             modal=True,
-            title=ft.Row([ft.Icon(name=ft.Icons.TUNE_ROUNDED, color="#38BDF8"), ft.Text("Settings", weight=ft.FontWeight.BOLD)], spacing=8),
+            title=ft.Row([ft.Icon(name=ft.Icons.TUNE_ROUNDED, color="#10B981"), ft.Text("App Settings", weight=ft.FontWeight.BOLD)], spacing=8),
             content=ft.Container(width=340, content=ft.Column([api_key_input, robot_url_input, sys_prompt_input], tight=True, spacing=10)),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda ev: close_dialog(ev)),
-                ft.ElevatedButton("Save", icon=ft.Icons.CHECK_ROUNDED, on_click=save_settings, style=ft.ButtonStyle(bgcolor="#2563EB", color="#FFFFFF")),
+                ft.ElevatedButton("Save", icon=ft.Icons.CHECK_ROUNDED, on_click=save_settings, style=ft.ButtonStyle(bgcolor="#10B981", color="#FFFFFF")),
             ],
         )
         page.dialog = settings_dlg
@@ -844,14 +965,14 @@ def main(page: ft.Page):
             page.client_storage.remove(STORAGE_KEY_CHAT_HISTORY)
             close_dialog(ev)
             reload_chat_history()
-            page.snack_bar = ft.SnackBar(content=ft.Text("Chat cleared."), bgcolor="#1E293B")
+            page.snack_bar = ft.SnackBar(content=ft.Text("Chat cleared."), bgcolor="#1F2937")
             page.snack_bar.open = True
             page.update()
 
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Text("Clear Chat History?"),
-            content=ft.Text("Erases chat messages on this device."),
+            content=ft.Text("Erases chat history stored on this device."),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda ev: close_dialog(ev)),
                 ft.TextButton("Clear All", on_click=do_clear, style=ft.ButtonStyle(color="#EF4444")),
@@ -867,18 +988,19 @@ def main(page: ft.Page):
             page.update()
 
     # ------------------------------------------
-    # TOP APPBAR & TABS STRUCTURE
+    # TOP HEADER & APPBAR (PERSONAL BRANDING)
     # ------------------------------------------
     page.appbar = ft.AppBar(
-        leading=ft.Container(padding=ft.padding.only(left=12), content=ft.CircleAvatar(bgcolor="#1E293B", content=ft.Icon(name=ft.Icons.PSYCHOLOGY_ROUNDED, color="#38BDF8", size=22))),
+        leading=ft.Container(padding=ft.padding.only(left=12), content=ft.CircleAvatar(bgcolor="#064E3B", content=ft.Icon(name=ft.Icons.AUTO_AWESOME_ROUNDED, color="#34D399", size=22))),
         title=ft.Column([
-            ft.Text("Pocket Agent", size=18, weight=ft.FontWeight.BOLD, color="#F8FAFC"),
-            ft.Row([ft.Container(width=7, height=7, border_radius=4, bgcolor="#10B981"), ft.Text("Drive Robot • Zero-Server", size=11, color="#94A3B8")], spacing=5),
+            ft.Text("Waqar Aslam Piracha", size=15, weight=ft.FontWeight.BOLD, color="#F9FAFB"),
+            ft.Text("Personal Intelligence & Automation Hub", size=11, color="#34D399"),
         ], spacing=1),
-        bgcolor="#161B22",
+        bgcolor="#111827",
+        elevation=2,
         actions=[
-            ft.IconButton(icon=ft.Icons.DELETE_SWEEP_ROUNDED, tooltip="Clear Chat", icon_color="#94A3B8", on_click=confirm_clear_chat),
-            ft.IconButton(icon=ft.Icons.SETTINGS_ROUNDED, tooltip="Settings", icon_color="#94A3B8", on_click=open_settings),
+            ft.IconButton(icon=ft.Icons.DELETE_SWEEP_ROUNDED, tooltip="Clear Chat", icon_color="#9CA3AF", on_click=confirm_clear_chat),
+            ft.IconButton(icon=ft.Icons.SETTINGS_ROUNDED, tooltip="Settings", icon_color="#9CA3AF", on_click=open_settings),
         ],
     )
 
@@ -886,8 +1008,8 @@ def main(page: ft.Page):
         selected_index=0,
         animation_duration=250,
         tabs=[
-            ft.Tab(text="🧠 Second Brain", icon=ft.Icons.PSYCHOLOGY_ROUNDED, content=tab1_content),
-            ft.Tab(text="🎬 Video Publisher", icon=ft.Icons.VIDEO_LIBRARY_ROUNDED, content=tab2_content),
+            ft.Tab(text="🧠 Second Brain Hub", icon=ft.Icons.PSYCHOLOGY_ROUNDED, content=tab1_content),
+            ft.Tab(text="🎬 YouTube & Media Uploader", icon=ft.Icons.VIDEO_LIBRARY_ROUNDED, content=tab2_content),
         ],
         expand=True,
     )
