@@ -31,7 +31,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: "stable"
+          flutter-version: "3.44.8"
           cache: true
 
       - name: Verify Flutter & Android Environment
@@ -45,7 +45,7 @@ jobs:
       - name: Build Android Release APK via Flet
         run: |
           yes | flutter doctor --android-licenses || true
-          flet build apk --verbose
+          echo "y" | flet build apk --verbose
 
       - name: Locate and Verify APK
         run: |
