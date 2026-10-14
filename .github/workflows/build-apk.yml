@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Compile Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Verify Flutter & Android Environment
+        run: flutter doctor -v
+
+      - name: Install Python & Flet Build Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build Android Release APK via Flet
+        run: |
+          flet build apk --verbose --include-packages google-genai
+
+      - name: Locate and Verify APK
+        run: |
+          echo "Listing compiled APK outputs:"
+          ls -la build/apk/ || ls -la build/
+
+      - name: Upload APK Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketAgent-APK
+          path: |
+            build/apk/*.apk
+          retention-days: 14
+          if-no-files-found: error
