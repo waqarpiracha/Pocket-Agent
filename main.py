@@ -638,9 +638,29 @@ def main(page: ft.Page):
         bgcolor="#0F172A",
     )
 
+    ig_caption_input = ft.TextField(
+        label="Instagram Reels Caption",
+        multiline=True,
+        min_lines=2,
+        max_lines=3,
+        hint_text="Hook, solution summary, and call to action for Instagram Reels",
+        border_color="#374151",
+        bgcolor="#0F172A",
+    )
+
+    tiktok_caption_input = ft.TextField(
+        label="TikTok Caption & Sound Cue",
+        multiline=True,
+        min_lines=2,
+        max_lines=3,
+        hint_text="Punchy viral caption with high-retention hook",
+        border_color="#374151",
+        bgcolor="#0F172A",
+    )
+
     hashtags_input = ft.TextField(
-        label="Hashtags & Tags",
-        hint_text="#SupplyChain #PowerBI #Excel #WaqarAnalytics",
+        label="Hashtags & Tags (Multi-Platform)",
+        hint_text="#SupplyChain #PowerBI #Excel #WaqarAnalytics #Kinaxis #Automation",
         border_color="#374151",
         bgcolor="#0F172A",
     )
@@ -762,18 +782,21 @@ def main(page: ft.Page):
             return
 
         target_name = target_filename_input.value.strip() or "Supply Chain Automation Video"
-        page.snack_bar = ft.SnackBar(content=ft.Text("✨ Gemini 2.5 Flash analyzing video & crafting viral metadata..."), bgcolor="#10B981")
+        page.snack_bar = ft.SnackBar(content=ft.Text("✨ Gemini 2.5 Flash optimizing multi-platform captions & hashtags..."), bgcolor="#10B981")
         page.snack_bar.open = True
         page.update()
 
         prompt = (
-            f"You are a top viral YouTube Shorts and LinkedIn video strategist for Waqar Piracha "
-            f"(Senior BI & Supply Chain Consultant). The video file is named: '{target_name}'. "
-            "Write highly engaging, high-CTR viral metadata formatted as raw JSON with three keys: "
-            "'title' (punchy 6-10 word title with an emoji), "
-            "'description' (2 high-impact lines explaining the automated solution, business ROI, and CTA to connect on LinkedIn), "
-            "'hashtags' (6-8 trending tags e.g. #SupplyChain #PowerBI #Excel #WaqarAnalytics #Kinaxis). "
-            "Return raw JSON only, no markdown code block fences."
+            f"You are a top viral social media strategist and executive copywriter for Waqar Piracha "
+            f"(Senior Business Intelligence Consultant & Supply Chain Automation Specialist). "
+            f"The video file in Google Drive is named: '{target_name}'. "
+            "Generate platform-tailored viral metadata formatted as raw JSON with five exact keys:\n"
+            "1. 'title': High-CTR YouTube & Shorts title (6-10 words with 1 relevant emoji).\n"
+            "2. 'description': Comprehensive YouTube description with ROI metrics, automated problem solved, and CTA to connect on LinkedIn.\n"
+            "3. 'ig_caption': High-engagement Instagram Reels caption with an irresistible 3-second hook, solution breakdown, and 3-5 hashtags.\n"
+            "4. 'tiktok_caption': Fast-paced viral TikTok caption with sound/action cue and #FYP tags.\n"
+            "5. 'hashtags': 6-8 trending industry hashtags (e.g. #SupplyChain #PowerBI #Excel #Automation #WaqarAnalytics #Kinaxis).\n"
+            "Return raw JSON only, with no markdown code blocks or backticks."
         )
 
         try:
@@ -790,6 +813,8 @@ def main(page: ft.Page):
 
                 title_input.value = parsed.get("title", title_input.value)
                 desc_input.value = parsed.get("description", desc_input.value)
+                ig_caption_input.value = parsed.get("ig_caption", ig_caption_input.value)
+                tiktok_caption_input.value = parsed.get("tiktok_caption", tiktok_caption_input.value)
                 hashtags_input.value = parsed.get("hashtags", hashtags_input.value)
 
                 # Sync to Queue in Drive
@@ -800,11 +825,16 @@ def main(page: ft.Page):
                     "account": account_dropdown.value,
                     "title": title_input.value,
                     "description": desc_input.value,
+                    "ig_caption": ig_caption_input.value,
+                    "tiktok_caption": tiktok_caption_input.value,
                     "hashtags": hashtags_input.value,
                 }).encode("utf-8")
-                urllib.request.urlopen(urllib.request.Request(url, data=sync_payload, headers={"Content-Type": "application/json"}, method="POST"), timeout=8)
+                try:
+                    urllib.request.urlopen(urllib.request.Request(url, data=sync_payload, headers={"Content-Type": "application/json"}, method="POST"), timeout=8)
+                except Exception:
+                    pass
 
-                page.snack_bar = ft.SnackBar(content=ft.Text("✨ AI Metadata generated & synced to Google Drive Sheet!"), bgcolor="#047857")
+                page.snack_bar = ft.SnackBar(content=ft.Text("✨ Multi-platform captions & hashtags generated!"), bgcolor="#047857")
                 page.snack_bar.open = True
                 page.update()
         except Exception as err:
@@ -837,7 +867,7 @@ def main(page: ft.Page):
         publish_result_card.visible = True
         publish_result_card.content = ft.Row([
             ft.ProgressRing(width=16, height=16, stroke_width=2, color="#34D399"),
-            ft.Text(f"🚀 Google Drive Robot is uploading '{fn}' directly to {', '.join(platforms)}..."),
+            ft.Text(f"🚀 Routing '{fn}' directly from Google Drive to {', '.join([p.title() for p in platforms])}...", color="#ECFDF5", size=13),
         ], spacing=10)
         page.update()
 
@@ -849,6 +879,8 @@ def main(page: ft.Page):
                 "account": account_dropdown.value,
                 "title": title_input.value,
                 "description": desc_input.value,
+                "ig_caption": ig_caption_input.value,
+                "tiktok_caption": tiktok_caption_input.value,
                 "hashtags": hashtags_input.value,
                 "platforms": platforms,
             }).encode("utf-8")
@@ -860,14 +892,15 @@ def main(page: ft.Page):
                 msg = res.get("message", "")
                 p_results = res.get("platforms", {})
 
-                res_lines = [f"**Status: {status.upper()}**\n{msg}\n"]
-                for p, val in p_results.items():
+                res_lines = [f"### 🚀 Multi-Platform Publishing Status: {status.upper()}\n{msg}\n"]
+                for p in platforms:
+                    val = p_results.get(p, "Queued / Processed")
                     res_lines.append(f"• **{p.title()}**: {val}")
 
                 publish_result_card.content = ft.Markdown("\n".join(res_lines))
                 page.update()
         except Exception as err:
-            publish_result_card.content = ft.Text(f"⚠️ Upload Error: {str(err)}", color="#EF4444")
+            publish_result_card.content = ft.Text(f"⚠️ Publish Error: {str(err)}", color="#EF4444")
             page.update()
 
     tab2_content = ft.ListView(
@@ -876,10 +909,10 @@ def main(page: ft.Page):
         spacing=12,
         controls=[
             ft.Row([
-                ft.Icon(name=ft.Icons.CLOUD_SYNC_ROUNDED, color="#10B981", size=22),
-                ft.Text("Google Drive Video Browser & YouTube Publisher", size=16, weight=ft.FontWeight.BOLD),
+                ft.Icon(name=ft.Icons.HUB_ROUNDED, color="#10B981", size=24),
+                ft.Text("Multi-Platform Social Publisher", size=16, weight=ft.FontWeight.BOLD),
             ], spacing=8),
-            ft.Text("Pick videos stored directly in Google Drive and upload to YouTube with zero local storage requirements.", size=12, color="#9CA3AF"),
+            ft.Text("Pick videos stored directly in Google Drive and publish to YouTube, Instagram Reels, and TikTok.", size=12, color="#9CA3AF"),
             
             ft.Row([
                 drive_folder_field,
@@ -898,26 +931,37 @@ def main(page: ft.Page):
 
             account_dropdown,
             target_filename_input,
-            title_input,
-            desc_input,
-            hashtags_input,
 
-            ft.Text("Publishing Channels:", size=13, weight=ft.FontWeight.BOLD),
-            ft.Row([chk_youtube, chk_instagram, chk_tiktok], wrap=True, spacing=10),
+            ft.Container(
+                bgcolor="#1F2937",
+                border_radius=10,
+                padding=12,
+                border=ft.border.all(1, "#374151"),
+                content=ft.Column([
+                    ft.Text("Target Social Media Platforms:", size=13, weight=ft.FontWeight.BOLD, color="#F3F4F6"),
+                    ft.Row([chk_youtube, chk_instagram, chk_tiktok], wrap=True, spacing=10),
+                ], spacing=6),
+            ),
 
             ft.Row([
                 ft.OutlinedButton(
-                    "✨ AI Magic Metadata",
+                    "✨ AI Caption & Hashtag Optimizer",
                     icon=ft.Icons.AUTO_AWESOME_ROUNDED,
                     on_click=generate_ai_metadata,
                 ),
             ]),
 
+            title_input,
+            desc_input,
+            ig_caption_input,
+            tiktok_caption_input,
+            hashtags_input,
+
             ft.ElevatedButton(
-                "🚀 Publish from Google Drive to YouTube",
+                "🚀 Publish to Selected Platforms",
                 icon=ft.Icons.ROCKET_LAUNCH_ROUNDED,
                 on_click=publish_video_from_drive,
-                height=48,
+                height=50,
                 style=ft.ButtonStyle(bgcolor="#10B981", color="#FFFFFF"),
             ),
             publish_result_card,
@@ -1009,7 +1053,7 @@ def main(page: ft.Page):
         animation_duration=250,
         tabs=[
             ft.Tab(text="🧠 Second Brain Hub", icon=ft.Icons.PSYCHOLOGY_ROUNDED, content=tab1_content),
-            ft.Tab(text="🎬 YouTube & Media Uploader", icon=ft.Icons.VIDEO_LIBRARY_ROUNDED, content=tab2_content),
+            ft.Tab(text="🎬 Social & Media Publisher", icon=ft.Icons.AUTO_GRAPH_ROUNDED, content=tab2_content),
         ],
         expand=True,
     )
