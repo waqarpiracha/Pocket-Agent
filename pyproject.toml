@@ -1,0 +1,21 @@
+[project]
+name = "pocketagent"
+version = "1.0.0"
+description = "Pocket Agent - Autonomous AI Mobile Agent powered by Gemini 2.5 Flash"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flet>=0.24.0",
+    "google-genai>=0.1.1",
+]
+
+[tool.flet]
+org = "com.pocket.agent"
+product = "PocketAgent"
+company = "Waqar Analytics & Automation"
+copyright = "Copyright (C) 2026 Waqar Analytics & Automation"
+
+[tool.flet.android]
+permissions = [
+    "INTERNET"
+]
