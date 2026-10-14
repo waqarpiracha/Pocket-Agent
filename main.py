@@ -1,8 +1,7 @@
 """
 Pocket Agent - Autonomous AI Mobile Agent Application
-Framework: Python Flet (>=0.24.0) with native Flutter rendering for Android
-AI Brain: Google GenAI SDK (gemini-2.5-flash) with tool-use / function calling
-Storage: page.client_storage for local offline encrypted persistence
+Pure Python Flet (0.25.2) Android Architecture with Direct Gemini REST API
+Zero C/Rust extension dependencies (pydantic-free, pure standard library)
 """
 
 import ast
@@ -11,32 +10,36 @@ import json
 import math
 import operator
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional
 
 import flet as ft
-from google import genai
-from google.genai import types
 
 # ==========================================
-# CONSTANTS & DEFAULT CONFIGURATION
+# CONSTANTS & CONFIGURATION
 # ==========================================
 DEFAULT_SYSTEM_INSTRUCTION = (
     "You are Pocket Agent, an elite autonomous executive AI assistant and mobile operations specialist. "
-    "You run locally on an Android device. You have direct access to system tools: "
-    "1) Checking device date and time (`get_device_datetime`). "
-    "2) Storing and retrieving local notes & tasks (`save_note`, `read_notes`). "
-    "3) Triggering external webhooks and automation workflows like n8n or Zapier (`trigger_webhook`). "
-    "4) Performing precision calculations (`quick_calculator`). "
-    "Always proactively use your tools whenever relevant. Respond with structured, concise, "
-    "executive-grade Markdown, featuring code snippets, tables, and bullet points where helpful."
+    "You run locally on an Android device for Waqar Piracha (Senior Business Intelligence & Automation Specialist). "
+    "You have direct access to native tools: "
+    "1) `get_device_datetime`: Read current device clock and date. "
+    "2) `save_note` & `read_notes`: Manage local device notes and tasks. "
+    "3) `quick_calculator`: Safely compute mathematical and load formulas. "
+    "4) `query_working_knowledge`: Search Second Brain and operational knowledge base. "
+    "5) `save_to_second_brain`: Record ideas, audit logs, or operational entries into Second Brain. "
+    "Proactively invoke your tools whenever relevant. Respond with structured, executive-grade Markdown "
+    "with bold highlights, bullet points, tables, and formatted code snippets where helpful."
 )
 
 STORAGE_KEY_API_KEY = "pocket_agent_gemini_api_key"
 STORAGE_KEY_SYSTEM_PROMPT = "pocket_agent_system_prompt"
 STORAGE_KEY_CHAT_HISTORY = "pocket_agent_chat_history"
 STORAGE_KEY_NOTES = "pocket_agent_notes"
+STORAGE_KEY_BRAIN_URL = "pocket_agent_second_brain_url"
+DEFAULT_BRAIN_URL = "https://script.google.com/macros/s/AKfycbz_bridge/exec"
 
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 # ==========================================
 # SAFE MATHEMATICAL EVALUATOR (AST-BASED)
@@ -116,17 +119,102 @@ def evaluate_math_expression(expression: str) -> str:
 
 
 # ==========================================
+# GEMINI TOOL DECLARATIONS (FUNCTION CALLING)
+# ==========================================
+GEMINI_FUNCTION_DECLARATIONS = [
+    {
+        "name": "get_device_datetime",
+        "description": "Returns the current local date, time, and day of the week on the device.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
+    {
+        "name": "save_note",
+        "description": "Saves a personal task, note, or reminder locally on the mobile device.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "title": {
+                    "type": "STRING",
+                    "description": "The title or subject of the note.",
+                },
+                "content": {
+                    "type": "STRING",
+                    "description": "The body text or details of the note.",
+                },
+            },
+            "required": ["title", "content"],
+        },
+    },
+    {
+        "name": "read_notes",
+        "description": "Retrieves and lists all persistent tasks and notes saved on the mobile device.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+        },
+    },
+    {
+        "name": "quick_calculator",
+        "description": "Safely evaluates mathematical or engineering expressions (e.g., '(240*15*0.8)/1000' or 'sqrt(144)+25').",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "expression": {
+                    "type": "STRING",
+                    "description": "The mathematical formula string to evaluate.",
+                }
+            },
+            "required": ["expression"],
+        },
+    },
+    {
+        "name": "query_working_knowledge",
+        "description": "Queries Waqar's Google Drive AI Second Brain bridge for SOPs, supply chain patterns, bot catalogs, and notes.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "search_keyword": {
+                    "type": "STRING",
+                    "description": "Keyword or topic to search across the Second Brain knowledge base.",
+                }
+            },
+            "required": ["search_keyword"],
+        },
+    },
+    {
+        "name": "save_to_second_brain",
+        "description": "Appends a new note, project milestone, or operational observation to the Google Drive Second Brain.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "topic": {
+                    "type": "STRING",
+                    "description": "Category or topic (e.g., 'Kinaxis', 'SAP', 'Idea', 'Meeting').",
+                },
+                "content": {
+                    "type": "STRING",
+                    "description": "The content or observation to record.",
+                },
+            },
+            "required": ["topic", "content"],
+        },
+    },
+]
+
+
+# ==========================================
 # MAIN APPLICATION CONTROLLER
 # ==========================================
 def main(page: ft.Page):
-    # Mobile App Window & Theme Configuration
     page.title = "Pocket Agent"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.spacing = 0
-    page.bgcolor = "#0D1117"  # Deep obsidian dark background
+    page.bgcolor = "#0D1117"
 
-    # Configure responsive mobile fonts & visual styling
     page.theme = ft.Theme(
         color_scheme_seed="#3B82F6",
         visual_density=ft.ThemeVisualDensity.COMPACT,
@@ -135,17 +223,8 @@ def main(page: ft.Page):
     # ------------------------------------------
     # STATE MANAGEMENT
     # ------------------------------------------
-    current_tool_callback: Optional[Callable[[str, str], None]] = None
-    tools_executed_in_current_turn: List[str] = []
+    tools_executed_in_turn: List[str] = []
 
-    def notify_tool_execution(tool_name: str, detail: str = ""):
-        tools_executed_in_current_turn.append(tool_name)
-        if current_tool_callback:
-            current_tool_callback(tool_name, detail)
-
-    # ------------------------------------------
-    # LOCAL STORAGE HELPERS
-    # ------------------------------------------
     def get_stored_api_key() -> str:
         return page.client_storage.get(STORAGE_KEY_API_KEY) or ""
 
@@ -164,173 +243,225 @@ def main(page: ft.Page):
     def save_notes_to_storage(notes: Dict[str, Any]):
         page.client_storage.set(STORAGE_KEY_NOTES, notes)
 
+    def get_second_brain_url() -> str:
+        return page.client_storage.get(STORAGE_KEY_BRAIN_URL) or DEFAULT_BRAIN_URL
+
     # ------------------------------------------
-    # AUTONOMOUS AGENT TOOLS (FUNCTION CALLING)
+    # TOOL EXECUTION IMPLEMENTATIONS
     # ------------------------------------------
-    def get_device_datetime() -> str:
-        """Returns the current local date, time, and day of the week on the device."""
-        notify_tool_execution("get_device_datetime", "reading device clock")
+    def exec_get_device_datetime(args: Dict[str, Any]) -> str:
         now = datetime.datetime.now()
         return now.strftime("%A, %B %d, %Y - %I:%M:%S %p")
 
-    def save_note(title: str, content: str) -> str:
-        """Saves a note, task, or reminder to the device's persistent local storage.
-
-        Args:
-            title: The short descriptive title of the note.
-            content: The detailed body text or task description.
-        """
-        notify_tool_execution("save_note", f"title: '{title}'")
+    def exec_save_note(args: Dict[str, Any]) -> str:
+        title = args.get("title", "Untitled").strip()
+        content = args.get("content", "").strip()
         notes = get_stored_notes()
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        notes[title.strip()] = {
-            "content": content.strip(),
+        notes[title] = {
+            "content": content,
             "updated_at": timestamp,
         }
         save_notes_to_storage(notes)
-        return f"Successfully saved note '{title}' at {timestamp}."
+        return f"Successfully saved note '{title}' on device at {timestamp}."
 
-    def read_notes() -> str:
-        """Retrieves and lists all persistent notes and tasks currently stored on the device."""
-        notify_tool_execution("read_notes", "querying storage")
+    def exec_read_notes(args: Dict[str, Any]) -> str:
         notes = get_stored_notes()
         if not notes:
-            return "No notes or tasks found in device storage."
-        
-        output_lines = [f"Found {len(notes)} note(s) in local storage:\n"]
+            return "No notes or tasks found on this device."
+        lines = [f"Found {len(notes)} note(s) in local storage:\n"]
         for idx, (title, data) in enumerate(notes.items(), start=1):
             body = data.get("content", "")
             updated = data.get("updated_at", "N/A")
-            output_lines.append(f"{idx}. **{title}** (Updated: {updated})\n   {body}\n")
-        return "\n".join(output_lines)
+            lines.append(f"{idx}. **{title}** (Updated: {updated})\n   {body}\n")
+        return "\n".join(lines)
 
-    def trigger_webhook(url: str, payload_json: str) -> str:
-        """Sends an HTTP POST request with a JSON payload to an external automation webhook or API (e.g. n8n, Make, Zapier, Slack).
+    def exec_quick_calculator(args: Dict[str, Any]) -> str:
+        expr = args.get("expression", "")
+        return evaluate_math_expression(expr)
 
-        Args:
-            url: The destination endpoint URL.
-            payload_json: A valid JSON string containing the data payload.
-        """
-        notify_tool_execution("trigger_webhook", f"POST -> {url[:30]}...")
+    def exec_query_working_knowledge(args: Dict[str, Any]) -> str:
+        keyword = args.get("search_keyword", "").strip()
+        url = get_second_brain_url()
         try:
-            # Validate JSON format
-            parsed_payload = json.loads(payload_json)
-            encoded_data = json.dumps(parsed_payload).encode("utf-8")
-            
+            params = urllib.parse.urlencode({"action": "query", "q": keyword})
             req = urllib.request.Request(
-                url=url,
-                data=encoded_data,
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "PocketAgent-Android/1.0",
-                },
+                f"{url}?{params}",
+                headers={"User-Agent": "PocketAgent-Android/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read().decode("utf-8", errors="replace")
+                return f"Second Brain Query Results for '{keyword}':\n{data[:800]}"
+        except Exception as e:
+            # Fallback to local offline notes search
+            notes = get_stored_notes()
+            matching = [f"**{t}**: {d.get('content')}" for t, d in notes.items() if keyword.lower() in t.lower() or keyword.lower() in d.get("content", "").lower()]
+            if matching:
+                return f"(Offline Mode) Matching local device notes for '{keyword}':\n" + "\n".join(matching)
+            return f"Second Brain bridge notice: Unable to contact cloud endpoint ({str(e)}). No local notes matched '{keyword}'."
+
+    def exec_save_to_second_brain(args: Dict[str, Any]) -> str:
+        topic = args.get("topic", "General")
+        content = args.get("content", "")
+        url = get_second_brain_url()
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Always save locally on device first
+        exec_save_note({"title": f"[{topic}] {timestamp}", "content": content})
+        
+        try:
+            payload = json.dumps({"action": "save", "topic": topic, "content": content, "timestamp": timestamp}).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "PocketAgent-Android/1.0"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=12) as response:
-                status_code = response.getcode()
-                response_body = response.read().decode("utf-8", errors="replace")
-                return f"Webhook HTTP {status_code} Success. Response preview: {response_body[:300]}"
-        except urllib.error.HTTPError as he:
-            return f"Webhook HTTP Error {he.code}: {he.reason}"
-        except urllib.error.URLError as ue:
-            return f"Webhook Connection Error: {ue.reason}"
-        except json.JSONDecodeError as je:
-            return f"Invalid JSON payload supplied: {str(je)}"
-        except Exception as ex:
-            return f"Webhook execution error: {str(ex)}"
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return f"Successfully saved to Second Brain and synced locally (HTTP {resp.getcode()})."
+        except Exception as e:
+            return f"Saved locally on device. Cloud sync deferred ({str(e)})."
 
-    def quick_calculator(expression: str) -> str:
-        """Safely computes a mathematical or electrical load expression. Supports standard math, sqrt, pow, abs, log, round, sin, cos, pi, and e.
-
-        Args:
-            expression: The arithmetic or algebraic formula string, e.g. '(120 * 15 * 0.8) / 1000' or 'sqrt(144) + 15 * 2'.
-        """
-        notify_tool_execution("quick_calculator", f"evaluating '{expression}'")
-        return evaluate_math_expression(expression)
-
-    # List of callable tools for Gemini Function Calling
-    AGENT_TOOL_SET = [
-        get_device_datetime,
-        save_note,
-        read_notes,
-        trigger_webhook,
-        quick_calculator,
-    ]
+    DISPATCH_TOOL_MAP = {
+        "get_device_datetime": exec_get_device_datetime,
+        "save_note": exec_save_note,
+        "read_notes": exec_read_notes,
+        "quick_calculator": exec_quick_calculator,
+        "query_working_knowledge": exec_query_working_knowledge,
+        "save_to_second_brain": exec_save_to_second_brain,
+    }
 
     # ------------------------------------------
-    # AGENT BRAIN CONTROLLER
+    # DIRECT GEMINI REST API CLIENT
     # ------------------------------------------
-    class AgentBrain:
-        def __init__(self):
-            self.client: Optional[genai.Client] = None
-            self.chat_session = None
-            self.initialize_session()
+    def call_gemini_rest_api(contents_payload: List[Dict[str, Any]], system_prompt: str, api_key: str) -> Dict[str, Any]:
+        endpoint = f"{GEMINI_API_BASE}?key={api_key}"
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "contents": contents_payload,
+            "tools": [
+                {"function_declarations": GEMINI_FUNCTION_DECLARATIONS}
+            ],
+            "generationConfig": {
+                "temperature": 0.4,
+                "maxOutputTokens": 2048,
+            },
+        }
 
-        def initialize_session(self):
-            api_key = get_stored_api_key()
-            if not api_key:
-                self.client = None
-                self.chat_session = None
-                return
+        encoded_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=encoded_data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "PocketAgent-Android/1.0",
+            },
+            method="POST",
+        )
 
-            try:
-                self.client = genai.Client(api_key=api_key)
-                system_instruction = get_stored_system_prompt()
-                
-                # Reconstruct previous conversational turns from client_storage
-                stored_turns = get_stored_chat_history()
-                history_contents = []
-                for item in stored_turns[-20:]:  # Keep recent context window compact
-                    role = item.get("role", "user")
-                    text = item.get("text", "")
-                    if text:
-                        gemini_role = "user" if role == "user" else "model"
-                        history_contents.append(
-                            types.Content(
-                                role=gemini_role,
-                                parts=[types.Part.from_text(text=text)],
-                            )
-                        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw_response = resp.read().decode("utf-8")
+            return json.loads(raw_response)
 
-                config = types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    tools=AGENT_TOOL_SET,
-                    temperature=0.4,
-                )
+    def execute_agent_multi_turn(user_message: str) -> str:
+        api_key = get_stored_api_key()
+        if not api_key:
+            raise ValueError("Gemini API key is not configured. Please open Settings to enter your API key.")
 
-                self.chat_session = self.client.chats.create(
-                    model="gemini-2.5-flash",
-                    config=config,
-                    history=history_contents if history_contents else None,
-                )
-            except Exception as e:
-                self.chat_session = None
-                print(f"Error initializing Gemini session: {e}")
+        system_instruction = get_stored_system_prompt()
+        history = get_stored_chat_history()
 
-        def send_query(self, user_text: str) -> str:
-            if not self.client or not self.chat_session:
-                self.initialize_session()
-                if not self.chat_session:
-                    raise ValueError(
-                        "Gemini API Key is missing or invalid. Please tap the Settings icon in the top right to configure your API key."
-                    )
+        # Build contents array from recent chat history (last 16 messages)
+        contents: List[Dict[str, Any]] = []
+        for item in history[-16:]:
+            role = item.get("role", "user")
+            text = item.get("text", "")
+            if text:
+                contents.append({
+                    "role": "user" if role == "user" else "model",
+                    "parts": [{"text": text}],
+                })
 
-            response = self.chat_session.send_message(user_text)
-            return response.text or "*(Agent executed operations but returned no additional text)*"
+        # Append current user prompt
+        contents.append({
+            "role": "user",
+            "parts": [{"text": user_message}],
+        })
 
-    brain = AgentBrain()
+        # Multi-turn tool execution loop (up to 5 function-calling hops)
+        for _ in range(5):
+            api_result = call_gemini_rest_api(contents, system_instruction, api_key)
+            candidates = api_result.get("candidates", [])
+            if not candidates:
+                return "No response received from Gemini API."
+
+            first_candidate = candidates[0]
+            model_content = first_candidate.get("content", {})
+            parts = model_content.get("parts", [])
+
+            # Check if Gemini invoked a function call
+            function_call = None
+            text_response = ""
+            for part in parts:
+                if "functionCall" in part:
+                    function_call = part["functionCall"]
+                if "text" in part:
+                    text_response += part["text"]
+
+            if not function_call:
+                # Terminal text answer reached
+                return text_response or "*(Agent executed operations successfully)*"
+
+            # Execute tool call
+            fn_name = function_call.get("name", "")
+            fn_args = function_call.get("args", {})
+            tools_executed_in_turn.append(fn_name)
+
+            # Update UI indicator
+            tool_status_text.value = f"Executing tool: {fn_name}..."
+            tool_badge.visible = True
+            page.update()
+
+            handler = DISPATCH_TOOL_MAP.get(fn_name)
+            if handler:
+                try:
+                    tool_output = handler(fn_args)
+                except Exception as err:
+                    tool_output = f"Tool '{fn_name}' execution error: {str(err)}"
+            else:
+                tool_output = f"Unknown tool: '{fn_name}'."
+
+            # Append assistant's function call and user's function response to conversation
+            contents.append({
+                "role": "model",
+                "parts": [{"functionCall": {"name": fn_name, "args": fn_args}}],
+            })
+            contents.append({
+                "role": "user",
+                "parts": [
+                    {
+                        "functionResponse": {
+                            "name": fn_name,
+                            "response": {"output": str(tool_output)},
+                        }
+                    }
+                ],
+            })
+
+        return "Agent completed multi-turn tool operations."
 
     # ------------------------------------------
-    # UI COMPONENTS & LAYOUT
+    # UI COMPONENTS
     # ------------------------------------------
     chat_list = ft.ListView(
         expand=True,
         spacing=14,
-        padding=ft.padding.only(left=16, right=16, top=16, bottom=16),
+        padding=ft.padding.symmetric(horizontal=16, vertical=16),
         auto_scroll=True,
     )
 
-    # Tool Execution Status Badge / Banner
     tool_status_text = ft.Text(
         value="",
         color="#93C5FD",
@@ -338,7 +469,7 @@ def main(page: ft.Page):
         weight=ft.FontWeight.W_500,
         expand=True,
     )
-    
+
     tool_badge = ft.Container(
         visible=False,
         bgcolor="#1E293B",
@@ -358,20 +489,8 @@ def main(page: ft.Page):
         ),
     )
 
-    def on_tool_progress(name: str, detail: str = ""):
-        tool_status_text.value = f"Invoking tool: {name}{f' ({detail})' if detail else ''}..."
-        tool_badge.visible = True
-        page.update()
-
-    current_tool_callback = on_tool_progress
-
-    # ------------------------------------------
-    # CHAT BUBBLE GENERATION
-    # ------------------------------------------
     def create_message_bubble(role: str, text: str, timestamp: str = "", tools_used: List[str] = None) -> ft.Control:
         is_user = (role == "user")
-        
-        # Format tool badges if any were executed for this turn
         tools_row = None
         if tools_used and not is_user:
             tool_chips = [
@@ -394,21 +513,10 @@ def main(page: ft.Page):
             tools_row = ft.Row(controls=tool_chips, wrap=True, spacing=6)
 
         if is_user:
-            # User Bubble: Right-aligned, Indigo-Blue Accent
             bubble_content = ft.Column(
                 controls=[
-                    ft.Text(
-                        value=text,
-                        color="#FFFFFF",
-                        size=15,
-                        selectable=True,
-                    ),
-                    ft.Text(
-                        value=timestamp,
-                        color="#93C5FD",
-                        size=10,
-                        text_align=ft.TextAlign.RIGHT,
-                    ),
+                    ft.Text(value=text, color="#FFFFFF", size=15, selectable=True),
+                    ft.Text(value=timestamp, color="#93C5FD", size=10, text_align=ft.TextAlign.RIGHT),
                 ],
                 tight=True,
                 spacing=4,
@@ -418,24 +526,14 @@ def main(page: ft.Page):
             bubble_container = ft.Container(
                 content=bubble_content,
                 bgcolor="#2563EB",
-                border_radius=ft.border_radius.only(
-                    top_left=16,
-                    top_right=4,
-                    bottom_left=16,
-                    bottom_right=16,
-                ),
+                border_radius=ft.border_radius.only(top_left=16, top_right=4, bottom_left=16, bottom_right=16),
                 padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                shadow=ft.BoxShadow(
-                    spread_radius=1,
-                    blur_radius=6,
-                    color="#1E3A8A44",
-                    offset=ft.Offset(0, 2),
-                ),
+                shadow=ft.BoxShadow(spread_radius=1, blur_radius=6, color="#1E3A8A44", offset=ft.Offset(0, 2)),
             )
 
             return ft.Row(
                 controls=[
-                    ft.Container(expand=True),  # Spacer to push to right
+                    ft.Container(expand=True),
                     bubble_container,
                     ft.CircleAvatar(
                         content=ft.Icon(name=ft.Icons.PERSON_ROUNDED, size=18, color="#FFFFFF"),
@@ -448,7 +546,6 @@ def main(page: ft.Page):
                 spacing=8,
             )
         else:
-            # Agent Bubble: Left-aligned, Sleek Obsidian Dark Card with Markdown
             column_items = []
             if tools_row:
                 column_items.append(tools_row)
@@ -459,40 +556,20 @@ def main(page: ft.Page):
                     selectable=True,
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
                     code_theme="atom-one-dark",
-                    code_style=ft.TextStyle(
-                        font_family="monospace",
-                        size=13,
-                        color="#A7F3D0",
-                    ),
+                    code_style=ft.TextStyle(font_family="monospace", size=13, color="#A7F3D0"),
                 )
             )
 
             if timestamp:
-                column_items.append(
-                    ft.Text(
-                        value=timestamp,
-                        color="#64748B",
-                        size=10,
-                    )
-                )
+                column_items.append(ft.Text(value=timestamp, color="#64748B", size=10))
 
             bubble_container = ft.Container(
                 content=ft.Column(controls=column_items, tight=True, spacing=6),
                 bgcolor="#161B22",
-                border_radius=ft.border_radius.only(
-                    top_left=4,
-                    top_right=16,
-                    bottom_left=16,
-                    bottom_right=16,
-                ),
+                border_radius=ft.border_radius.only(top_left=4, top_right=16, bottom_left=16, bottom_right=16),
                 border=ft.border.all(1, "#30363D"),
                 padding=ft.padding.symmetric(horizontal=14, vertical=12),
-                shadow=ft.BoxShadow(
-                    spread_radius=1,
-                    blur_radius=8,
-                    color="#00000066",
-                    offset=ft.Offset(0, 3),
-                ),
+                shadow=ft.BoxShadow(spread_radius=1, blur_radius=8, color="#00000066", offset=ft.Offset(0, 3)),
                 expand=True,
             )
 
@@ -510,14 +587,10 @@ def main(page: ft.Page):
                 spacing=8,
             )
 
-    # ------------------------------------------
-    # LOAD SAVED MESSAGES ON STARTUP
-    # ------------------------------------------
     def render_chat_history():
         chat_list.controls.clear()
         saved_history = get_stored_chat_history()
         if not saved_history:
-            # Welcome Placeholder Card
             chat_list.controls.append(
                 ft.Container(
                     alignment=ft.alignment.center,
@@ -528,7 +601,7 @@ def main(page: ft.Page):
                             ft.Text("Pocket Agent Online", size=20, weight=ft.FontWeight.BOLD, color="#F8FAFC"),
                             ft.Text(
                                 "Autonomous on-device assistant powered by Gemini 2.5 Flash.\n"
-                                "Equipped with live tools: clock, notes, webhooks, and calculator.",
+                                "Direct REST API with zero native compilation dependencies.",
                                 size=13,
                                 color="#94A3B8",
                                 text_align=ft.TextAlign.CENTER,
@@ -556,26 +629,19 @@ def main(page: ft.Page):
                 chat_list.controls.append(bubble)
         page.update()
 
-    # ------------------------------------------
-    # CHAT CLEAR ACTION
-    # ------------------------------------------
     def confirm_clear_chat(e):
         def perform_clear(ev):
             page.client_storage.remove(STORAGE_KEY_CHAT_HISTORY)
-            brain.initialize_session()
             close_dialog(ev)
             render_chat_history()
-            page.snack_bar = ft.SnackBar(
-                content=ft.Text("Chat history cleared."),
-                bgcolor="#1E293B",
-            )
+            page.snack_bar = ft.SnackBar(content=ft.Text("Chat history cleared."), bgcolor="#1E293B")
             page.snack_bar.open = True
             page.update()
 
         confirm_dialog = ft.AlertDialog(
             modal=True,
             title=ft.Text("Clear Chat History?"),
-            content=ft.Text("This will erase all local conversations from this device. Notes will be preserved."),
+            content=ft.Text("This will erase conversational history. Local notes and Second Brain records are preserved."),
             actions=[
                 ft.TextButton("Cancel", on_click=lambda ev: close_dialog(ev)),
                 ft.TextButton("Clear All", on_click=perform_clear, style=ft.ButtonStyle(color="#EF4444")),
@@ -592,7 +658,7 @@ def main(page: ft.Page):
             page.update()
 
     # ------------------------------------------
-    # SETTINGS MODAL / BOTTOM SHEET
+    # SETTINGS MODAL
     # ------------------------------------------
     api_key_field = ft.TextField(
         label="Gemini API Key",
@@ -613,20 +679,25 @@ def main(page: ft.Page):
         bgcolor="#0F172A",
     )
 
+    brain_url_field = ft.TextField(
+        label="Second Brain Bridge URL (Google Apps Script / Webhook)",
+        hint_text="https://script.google.com/macros/s/.../exec",
+        border_color="#3B82F6",
+        prefix_icon=ft.Icons.CLOUD_SYNC_ROUNDED,
+        bgcolor="#0F172A",
+    )
+
     def save_settings(e):
         key = api_key_field.value.strip()
         prompt = system_prompt_field.value.strip() or DEFAULT_SYSTEM_INSTRUCTION
-        
+        brain_url = brain_url_field.value.strip() or DEFAULT_BRAIN_URL
+
         page.client_storage.set(STORAGE_KEY_API_KEY, key)
         page.client_storage.set(STORAGE_KEY_SYSTEM_PROMPT, prompt)
-        
-        brain.initialize_session()
+        page.client_storage.set(STORAGE_KEY_BRAIN_URL, brain_url)
+
         close_dialog(e)
-        
-        page.snack_bar = ft.SnackBar(
-            content=ft.Text("Settings saved successfully!"),
-            bgcolor="#10B981",
-        )
+        page.snack_bar = ft.SnackBar(content=ft.Text("Settings saved successfully!"), bgcolor="#10B981")
         page.snack_bar.open = True
         page.update()
 
@@ -637,6 +708,7 @@ def main(page: ft.Page):
     def open_settings_dialog(e):
         api_key_field.value = get_stored_api_key()
         system_prompt_field.value = get_stored_system_prompt()
+        brain_url_field.value = get_second_brain_url()
 
         settings_dialog = ft.AlertDialog(
             modal=True,
@@ -648,7 +720,7 @@ def main(page: ft.Page):
                 spacing=8,
             ),
             content=ft.Container(
-                width=340,
+                width=350,
                 content=ft.Column(
                     controls=[
                         api_key_field,
@@ -665,6 +737,7 @@ def main(page: ft.Page):
                             ],
                             alignment=ft.MainAxisAlignment.END,
                         ),
+                        brain_url_field,
                     ],
                     tight=True,
                     spacing=8,
@@ -686,7 +759,7 @@ def main(page: ft.Page):
         page.update()
 
     # ------------------------------------------
-    # MESSAGE SEND & ORCHESTRATION HANDLER
+    # INPUT BAR & SEND ORCHESTRATION
     # ------------------------------------------
     message_input = ft.TextField(
         hint_text="Ask Pocket Agent or trigger tools...",
@@ -727,12 +800,10 @@ def main(page: ft.Page):
         message_input.value = ""
         message_input.disabled = True
         send_button.disabled = True
-        
-        # Reset tool tracker for this turn
-        tools_executed_in_current_turn.clear()
+
+        tools_executed_in_turn.clear()
         tool_badge.visible = False
 
-        # Retrieve and update history
         history = get_stored_chat_history()
         history.append({
             "role": "user",
@@ -742,28 +813,22 @@ def main(page: ft.Page):
         })
         save_chat_history_to_storage(history)
 
-        # Clear placeholder if it was first message
         if len(history) == 1:
             chat_list.controls.clear()
 
-        # Add user message bubble immediately
         user_bubble = create_message_bubble(role="user", text=user_text, timestamp=now_str)
         chat_list.controls.append(user_bubble)
         page.update()
 
-        # Query Agent Brain with tool handling
-        agent_reply = ""
         try:
-            agent_reply = brain.send_query(user_text)
+            agent_reply = execute_agent_multi_turn(user_text)
         except Exception as ex:
-            agent_reply = f"⚠️ **Agent Encountered an Error:**\n\n`{str(ex)}`"
+            agent_reply = f"⚠️ **Agent Error:**\n\n`{str(ex)}`"
 
-        # Turn finished: hide tool execution badge
         tool_badge.visible = False
 
-        # Add agent message bubble
         model_now_str = datetime.datetime.now().strftime("%I:%M %p")
-        used_tools_snapshot = list(tools_executed_in_current_turn)
+        used_tools_snapshot = list(tools_executed_in_turn)
         history.append({
             "role": "model",
             "text": agent_reply,
@@ -789,7 +854,7 @@ def main(page: ft.Page):
     send_button.on_click = handle_send_message
 
     # ------------------------------------------
-    # APP BAR & MAIN CONTAINER ASSEMBLY
+    # APPBAR & ASSEMBLY
     # ------------------------------------------
     page.appbar = ft.AppBar(
         leading=ft.Container(
@@ -805,7 +870,7 @@ def main(page: ft.Page):
                 ft.Row(
                     controls=[
                         ft.Container(width=7, height=7, border_radius=4, bgcolor="#10B981"),
-                        ft.Text("Gemini 2.5 Flash • Active", size=11, color="#94A3B8"),
+                        ft.Text("Gemini 2.5 Flash • REST Direct", size=11, color="#94A3B8"),
                     ],
                     spacing=5,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -857,7 +922,6 @@ def main(page: ft.Page):
         )
     )
 
-    # Initial load of messages
     render_chat_history()
 
 

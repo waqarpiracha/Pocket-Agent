@@ -5,8 +5,7 @@ description = "Pocket Agent - Autonomous AI Mobile Agent powered by Gemini 2.5 F
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "flet>=0.24.0",
-    "google-genai>=0.1.1",
+    "flet==0.25.2",
 ]
 
 [tool.flet]
